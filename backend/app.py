@@ -6,10 +6,11 @@ from config import Config
 from routes.auth import auth_bp
 from flask_jwt_extended import JWTManager
 from routes.profile import profile_bp
+from routes.career_preferences import career_preferences_bp
 
 def create_app():
-
     app = Flask(__name__)
+    app.register_blueprint(career_preferences_bp)
     app.register_blueprint(skills_bp)
     app.config.from_object(Config)
     db.init_app(app)
