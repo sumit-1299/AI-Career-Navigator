@@ -1,0 +1,1 @@
+AI Career Navigator is a personalized career guidance system that analyzes a student's academic background, skills, interests, career preferences and assessment results to recommend suitable IT careers, identify skill gaps, generate learning roadmaps, and recommend relevant professional certifications and projects.
