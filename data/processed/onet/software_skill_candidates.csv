@@ -1,0 +1,135 @@
+source,source_version,original_name,normalized_name,occurrence_count,occupation_count,hot_technology_count,in_demand_count
+O*NET,31.0,Access software,access software,63,42,0,0
+O*NET,31.0,Accounting software,accounting software,433,171,89,7
+O*NET,31.0,Action games,action games,4,3,0,0
+O*NET,31.0,Administration software,administration software,41,15,0,0
+O*NET,31.0,Analytical or scientific software,analytical or scientific software,2900,372,339,76
+O*NET,31.0,Application server software,application server software,190,54,117,24
+O*NET,31.0,Audit software,audit software,1,1,0,0
+O*NET,31.0,Authentication server software,authentication server software,12,9,0,1
+O*NET,31.0,Aviation ground support software,aviation ground support software,5,4,0,0
+O*NET,31.0,Backup or archival software,backup or archival software,63,26,0,0
+O*NET,31.0,Bar coding software,bar coding software,2,2,0,0
+O*NET,31.0,Billing and invoicing software,billing and invoicing software,54,42,0,0
+O*NET,31.0,Bridge software,bridge software,1,1,0,0
+O*NET,31.0,Business intelligence and data analysis software,business intelligence and data analysis software,354,117,128,40
+O*NET,31.0,Calendar and scheduling software,calendar and scheduling software,232,178,0,0
+O*NET,31.0,Categorization or classification software,categorization or classification software,28,16,0,0
+O*NET,31.0,Charting software,charting software,12,10,0,0
+O*NET,31.0,Cloud-based data access and sharing software,cloud-based data access and sharing software,139,84,34,0
+O*NET,31.0,Cloud-based management software,cloud-based management software,106,52,66,5
+O*NET,31.0,Cloud-based protection or security software,cloud-based protection or security software,10,10,0,1
+O*NET,31.0,Clustering software,clustering software,30,24,0,0
+O*NET,31.0,Communications server software,communications server software,44,41,0,0
+O*NET,31.0,Compiler and decompiler software,compiler and decompiler software,27,12,0,2
+O*NET,31.0,Compliance software,compliance software,149,43,0,3
+O*NET,31.0,Computer aided design CAD and computer aided manufacturing CAM system,computer aided design cad and computer aided manufacturing cam system,3,3,0,0
+O*NET,31.0,Computer aided design CAD software,computer aided design cad software,1011,245,358,108
+O*NET,31.0,Computer aided manufacturing CAM software,computer aided manufacturing cam software,185,42,3,3
+O*NET,31.0,Computer based training software,computer based training software,511,110,0,32
+O*NET,31.0,Computer imaging software,computer imaging software,1,1,0,0
+O*NET,31.0,Configuration management software,configuration management software,143,44,59,7
+O*NET,31.0,Contact center software,contact center software,3,1,0,0
+O*NET,31.0,Content workflow software,content workflow software,58,46,39,12
+O*NET,31.0,Customer relationship management CRM software,customer relationship management crm software,374,142,88,20
+O*NET,31.0,Data base management system software,data base management system software,554,109,324,13
+O*NET,31.0,Data base reporting software,data base reporting software,169,92,28,1
+O*NET,31.0,Data base user interface and query software,data base user interface and query software,2521,632,910,109
+O*NET,31.0,Data compression software,data compression software,3,3,0,0
+O*NET,31.0,Data conversion software,data conversion software,8,4,0,0
+O*NET,31.0,Data mining software,data mining software,74,49,41,8
+O*NET,31.0,Desktop communications software,desktop communications software,121,83,0,0
+O*NET,31.0,Desktop publishing software,desktop publishing software,283,167,88,12
+O*NET,31.0,Development environment software,development environment software,1147,200,522,77
+O*NET,31.0,Device drivers or system software,device drivers or system software,31,14,0,0
+O*NET,31.0,Dictionary software,dictionary software,3,3,0,0
+O*NET,31.0,Document management software,document management software,612,293,331,12
+O*NET,31.0,Electronic mail software,electronic mail software,1141,735,639,187
+O*NET,31.0,Enterprise application integration software,enterprise application integration software,251,117,129,11
+O*NET,31.0,Enterprise resource planning ERP software,enterprise resource planning erp software,1191,367,381,40
+O*NET,31.0,Enterprise system management software,enterprise system management software,46,43,5,3
+O*NET,31.0,Expert system software,expert system software,84,54,29,4
+O*NET,31.0,Eye tracking software,eye tracking software,3,1,0,0
+O*NET,31.0,Facilities management software,facilities management software,104,60,0,0
+O*NET,31.0,Fax software,fax software,1,1,0,0
+O*NET,31.0,File versioning software,file versioning software,80,54,69,14
+O*NET,31.0,Filesystem software,filesystem software,18,13,0,0
+O*NET,31.0,Financial analysis software,financial analysis software,599,94,0,0
+O*NET,31.0,Flight control software,flight control software,9,3,0,0
+O*NET,31.0,Foreign language software,foreign language software,16,2,0,0
+O*NET,31.0,Gateway software,gateway software,2,2,0,0
+O*NET,31.0,Geographic information system,geographic information system,361,142,90,46
+O*NET,31.0,Graphical user interface development software,graphical user interface development software,50,34,14,6
+O*NET,31.0,Graphics or photo imaging software,graphics or photo imaging software,852,279,363,79
+O*NET,31.0,Helpdesk or call center software,helpdesk or call center software,25,19,0,0
+O*NET,31.0,Human resources software,human resources software,394,89,0,11
+O*NET,31.0,Industrial control software,industrial control software,317,138,0,2
+O*NET,31.0,Information retrieval or search software,information retrieval or search software,301,140,0,2
+O*NET,31.0,Instant messaging software,instant messaging software,77,62,0,0
+O*NET,31.0,Interactive voice response software,interactive voice response software,2,2,0,0
+O*NET,31.0,Internet browser software,internet browser software,567,470,59,13
+O*NET,31.0,Internet directory services software,internet directory services software,36,15,14,8
+O*NET,31.0,Internet protocol IP multimedia subsystem software,internet protocol ip multimedia subsystem software,31,26,0,0
+O*NET,31.0,Inventory management software,inventory management software,192,138,0,9
+O*NET,31.0,Label making software,label making software,16,11,0,0
+O*NET,31.0,LAN software,lan software,5,5,0,0
+O*NET,31.0,Legal management software,legal management software,4,3,0,0
+O*NET,31.0,Library software,library software,47,6,0,0
+O*NET,31.0,License management software,license management software,2,2,0,0
+O*NET,31.0,Mailing and shipping software,mailing and shipping software,2,2,0,0
+O*NET,31.0,Manufacturing execution system MES software,manufacturing execution system mes software,2,2,0,0
+O*NET,31.0,Map creation software,map creation software,229,87,2,1
+O*NET,31.0,Materials requirements planning logistics and supply chain software,materials requirements planning logistics and supply chain software,219,50,0,7
+O*NET,31.0,Medical software,medical software,1610,190,200,25
+O*NET,31.0,Metadata management software,metadata management software,77,28,5,2
+O*NET,31.0,Mobile location based services software,mobile location based services software,70,42,0,1
+O*NET,31.0,Mobile messaging service software,mobile messaging service software,11,11,0,0
+O*NET,31.0,Mobile operator specific application software,mobile operator specific application software,5,3,0,0
+O*NET,31.0,Multi-media educational software,multi-media educational software,52,32,0,0
+O*NET,31.0,Music or sound editing software,music or sound editing software,139,26,0,1
+O*NET,31.0,Network conferencing software,network conferencing software,33,26,1,0
+O*NET,31.0,Network connectivity terminal emulation software,network connectivity terminal emulation software,6,4,0,0
+O*NET,31.0,Network monitoring software,network monitoring software,171,35,0,1
+O*NET,31.0,Network operating system enhancement software,network operating system enhancement software,10,3,0,0
+O*NET,31.0,Network operation system software,network operation system software,4,4,0,0
+O*NET,31.0,Network security and virtual private network VPN equipment software,network security and virtual private network vpn equipment software,57,32,0,11
+O*NET,31.0,Network security or virtual private network VPN management software,network security or virtual private network vpn management software,53,24,0,0
+O*NET,31.0,Object or component oriented development software,object or component oriented development software,909,211,656,161
+O*NET,31.0,Object oriented data base management software,object oriented data base management software,65,42,48,5
+O*NET,31.0,Office suite software,office suite software,926,818,843,389
+O*NET,31.0,Operating system software,operating system software,909,342,691,47
+O*NET,31.0,Optical character reader OCR or scanning software,optical character reader ocr or scanning software,75,66,0,0
+O*NET,31.0,Pattern design software,pattern design software,14,9,0,0
+O*NET,31.0,Platform interconnectivity software,platform interconnectivity software,11,11,0,0
+O*NET,31.0,Point of sale POS software,point of sale pos software,179,43,0,1
+O*NET,31.0,Portal server software,portal server software,25,24,0,0
+O*NET,31.0,Presentation software,presentation software,740,633,629,196
+O*NET,31.0,Procedure management software,procedure management software,9,8,6,1
+O*NET,31.0,Process mapping and design software,process mapping and design software,164,154,146,3
+O*NET,31.0,Procurement software,procurement software,26,19,0,4
+O*NET,31.0,Program testing software,program testing software,238,55,42,10
+O*NET,31.0,Project management software,project management software,675,304,338,16
+O*NET,31.0,Requirements analysis and system architecture software,requirements analysis and system architecture software,47,28,0,0
+O*NET,31.0,Risk management data and analysis software,risk management data and analysis software,14,10,0,1
+O*NET,31.0,Route navigation software,route navigation software,28,17,0,0
+O*NET,31.0,Sales and marketing software,sales and marketing software,89,46,48,3
+O*NET,31.0,Software defined networking/ virtualization software,software defined networking/ virtualization software,1,1,0,0
+O*NET,31.0,Spell checkers,spell checkers,7,6,0,0
+O*NET,31.0,Spreadsheet software,spreadsheet software,918,859,867,339
+O*NET,31.0,Storage media loading software,storage media loading software,2,2,0,0
+O*NET,31.0,Storage networking software,storage networking software,32,22,0,0
+O*NET,31.0,Switch or router software,switch or router software,19,11,9,1
+O*NET,31.0,Tax preparation software,tax preparation software,44,7,3,1
+O*NET,31.0,Text to speech conversion software,text to speech conversion software,2,2,0,0
+O*NET,31.0,Time accounting software,time accounting software,135,75,13,1
+O*NET,31.0,Transaction security and virus protection software,transaction security and virus protection software,154,51,0,5
+O*NET,31.0,Transaction server software,transaction server software,61,39,0,3
+O*NET,31.0,Video conferencing software,video conferencing software,195,117,79,12
+O*NET,31.0,Video creation and editing software,video creation and editing software,387,140,46,23
+O*NET,31.0,Voice recognition software,voice recognition software,33,19,0,0
+O*NET,31.0,Voice synthesizer and recognition software,voice synthesizer and recognition software,1,1,0,0
+O*NET,31.0,WAN switching software and firmware,wan switching software and firmware,6,5,0,0
+O*NET,31.0,Web page creation and editing software,web page creation and editing software,440,205,156,7
+O*NET,31.0,Web platform development software,web platform development software,851,152,494,58
+O*NET,31.0,Wireless software,wireless software,1,1,0,0
+O*NET,31.0,Word processing software,word processing software,1100,789,893,81
