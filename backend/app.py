@@ -7,6 +7,7 @@ from routes.auth import auth_bp
 from flask_jwt_extended import JWTManager
 from routes.profile import profile_bp
 from routes.career_preferences import career_preferences_bp
+from routes.assessments import assessments_bp
 
 def create_app():
     app = Flask(__name__)
@@ -17,6 +18,7 @@ def create_app():
     JWTManager(app)
     app.register_blueprint(auth_bp)
     app.register_blueprint(profile_bp)
+    app.register_blueprint(assessments_bp)
 
     with app.app_context():
         from models.user import User
