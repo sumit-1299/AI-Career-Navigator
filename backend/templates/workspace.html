@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore your SQL assessment evidence and identify your next areas for practice.">
+  <title>AI Career Navigator | Candidate workspace</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ url_for('static', filename='workspace.css') }}">
+  <script src="{{ url_for('static', filename='workspace.js') }}" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div id="notice" class="notice" role="alert" hidden></div>
+  <div id="root"></div>
+  <noscript><main class="panel">Enable JavaScript to use the candidate workspace.</main></noscript>
+  <dialog id="submit-dialog" aria-labelledby="submit-title">
+    <form method="dialog" id="submit-confirmation">
+      <span class="eyebrow">Save your evidence</span>
+      <h2 id="submit-title">Ready to submit?</h2>
+      <p id="submit-summary"></p>
+      <p class="muted">Unanswered questions will be marked unassessed. Once submitted, this attempt cannot be edited.</p>
+      <div class="button-row"><button class="button secondary" value="cancel">Keep answering</button><button class="button primary" value="submit">Submit assessment</button></div>
+    </form>
+  </dialog>
+  <dialog id="reauth-dialog" aria-labelledby="reauth-title">
+    <form id="reauth-form">
+      <span class="eyebrow">Session expired</span>
+      <h2 id="reauth-title">Sign in to continue</h2>
+      <p class="muted">Your answers are still in this tab. Sign in to the same account to continue your action.</p>
+      <label>Email<input id="reauth-email" type="email" autocomplete="username" readonly></label>
+      <label>Password<input id="reauth-password" type="password" autocomplete="current-password" required></label>
+      <p id="reauth-error" class="error-text" role="alert"></p>
+      <div class="button-row"><button type="button" id="reauth-cancel" class="button secondary">Cancel</button><button type="submit" class="button primary">Continue</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

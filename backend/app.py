@@ -1,6 +1,6 @@
 from routes.skills import skills_bp
 
-from flask import Flask
+from flask import Flask, make_response, render_template
 from extensions import db
 from config import Config
 from routes.auth import auth_bp
@@ -46,6 +46,19 @@ def create_app():
                 "status": "error",
                 "message": str(e)
             }, 500
+
+    @app.route("/app")
+    def candidate_workspace():
+        response = make_response(render_template("workspace.html"))
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self'; "
+            "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+            "base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "same-origin"
+        return response
 
     return app
 
