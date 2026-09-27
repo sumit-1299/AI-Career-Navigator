@@ -23,7 +23,8 @@ body {
   margin: 0;
 }
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 button,
@@ -44,6 +45,7 @@ a {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
   outline: 3px solid #9697ed;
   outline-offset: 4px;
@@ -324,7 +326,9 @@ label {
 input[type="email"],
 input[type="password"],
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+#evidence-form input,
+#evidence-form textarea {
   width: 100%;
   border: 1px solid #d9dee7;
   border-radius: 9px;
@@ -1042,7 +1046,7 @@ dialog h2 {
     padding: 18px 20px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
-    flex-direction: row;
+    flex-direction: column;
     justify-content: space-between;
     align-items: center;
     gap: 12px;
@@ -1051,6 +1055,8 @@ dialog h2 {
     display: flex;
     margin: 0;
     gap: 2px;
+    width: 100%;
+    justify-content: space-between;
   }
   .sidebar-note {
     display: none;
@@ -1067,7 +1073,7 @@ dialog h2 {
   }
   .sidebar .brand {
     font-size: 0.8rem;
-    max-width: 130px;
+    align-self: flex-start;
   }
   .topbar {
     height: 65px;
@@ -1435,5 +1441,176 @@ dialog h2 {
   }
   .roadmap-activity .button {
     width: 100%;
+  }
+}
+
+/* Candidate-submitted project and certification evidence */
+.evidence-intro {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 32px;
+}
+.evidence-intro h2 {
+  font-size: 1.65rem;
+  margin: 18px 0 10px;
+}
+.evidence-intro p {
+  max-width: 610px;
+  font-size: 0.88rem;
+}
+.evidence-add-actions {
+  display: grid;
+  gap: 10px;
+  min-width: 195px;
+}
+.evidence-counts {
+  display: flex;
+  gap: 22px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.evidence-counts strong {
+  color: var(--ink);
+  margin-right: 4px;
+}
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  align-items: start;
+}
+.evidence-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.evidence-card .eyebrow {
+  margin-bottom: 0;
+}
+.evidence-card h3 {
+  margin: 20px 0 10px;
+  font-size: 1.24rem;
+  line-height: 1.45;
+}
+.evidence-card .topic-chips {
+  margin: 18px 0;
+}
+.evidence-details {
+  border-top: 1px solid var(--line);
+  padding-top: 17px;
+  margin-top: 8px;
+  font-size: 0.84rem;
+}
+.evidence-details summary {
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--brand);
+  line-height: 1.7;
+}
+.evidence-details h4 {
+  margin: 18px 0 8px;
+  font-size: 0.82rem;
+}
+.evidence-details p {
+  white-space: pre-wrap;
+  color: var(--muted);
+}
+.evidence-source {
+  display: block;
+  margin: 20px 0 0;
+  font-weight: 650;
+  font-size: 0.84rem;
+  text-underline-offset: 3px;
+}
+.evidence-source small {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.73rem;
+  margin-top: 7px;
+}
+.evidence-card-footer {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.evidence-card-footer > .small {
+  font-size: 0.7rem;
+}
+.evidence-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(230px, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+.evidence-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+#evidence-form textarea {
+  display: block;
+  resize: vertical;
+  line-height: 1.6;
+}
+#evidence-form input,
+#evidence-form textarea {
+  font-size: 0.86rem;
+  font-weight: 400;
+  min-width: 0;
+}
+.field-hint {
+  display: block;
+  font-size: 0.73rem;
+  font-weight: 400;
+  line-height: 1.65;
+  color: var(--muted);
+  margin: -10px 0 20px;
+}
+.evidence-guide h2 {
+  margin: 20px 0 14px;
+  font-size: 1.2rem;
+}
+.evidence-guide p {
+  font-size: 0.85rem;
+}
+.evidence-guide p:last-child {
+  margin-bottom: 0;
+}
+.evidence-form-actions {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 1100px) {
+  .evidence-editor-layout,
+  .evidence-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .evidence-intro {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .evidence-add-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 720px) {
+  .evidence-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .evidence-add-actions,
+  .evidence-add-actions .button {
+    width: 100%;
+  }
+  .evidence-editor-layout {
+    gap: 18px;
   }
 }

@@ -13,6 +13,10 @@ const state = {
   metadata: null,
   attempt: null,
   roadmap: null,
+  evidence: [],
+  evidenceEditor: null,
+  evidenceDirty: false,
+  showArchived: false,
   index: 0,
   drafts: new Map(),
 };
@@ -79,7 +83,7 @@ async function request(
     });
   } catch {
     throw new Error(
-      "The server could not be reached in time. Check that Flask is running. For an interrupted start or submission, check attempt history before trying again.",
+      "The server could not be reached in time. Check that Flask is running. If a save was interrupted, check your saved records before trying again. Unsaved form text remains in this tab.",
     );
   }
   if (response.status === 401 && auth && retry) {
@@ -144,7 +148,7 @@ function reauthenticate() {
         else
           reject(
             new Error(
-              "Sign-in cancelled. Your answers remain in this tab. Retry the action when you are ready to sign in.",
+              "Sign-in cancelled. Your unsaved work remains in this tab. Retry the action when you are ready to sign in.",
             ),
           );
       },
@@ -186,14 +190,103 @@ function renderAuth(email = "") {
 
 function renderShell() {
   const onHistory = state.view === "history";
-  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory ? "" : "active"}" data-action="overview" ${!onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>SQL foundations v1<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "SQL foundations"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
+  const onEvidence = state.view === "evidence";
+  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>SQL foundations v1<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "SQL foundations"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
   const main = document.querySelector("#main-content");
   if (state.view === "quiz") main.innerHTML = quizMarkup();
   else if (state.view === "results") main.innerHTML = resultsMarkup();
   else if (state.view === "roadmap") main.innerHTML = roadmapMarkup();
+  else if (state.view === "evidence") main.innerHTML = evidenceMarkup();
   else if (state.view === "history")
     main.innerHTML = `<div class="page-intro"><span class="eyebrow">Your evidence over time</span><h1>My assessments</h1><p class="muted">Revisit submitted results or continue an unfinished attempt.</p></div>${historyMarkup(state.history)}<p class="section-note">Showing up to 50 recent attempts. Repeating these same questions can reflect familiarity and is not independent evidence of skill improvement.</p>`;
   else main.innerHTML = overviewMarkup();
+}
+
+function evidenceMarkup() {
+  if (state.evidenceEditor) return evidenceEditorMarkup();
+  const active = state.evidence.filter((item) => !item.archived);
+  const archived = state.evidence.length - active.length;
+  const items = state.evidence.filter(
+    (item) => item.archived === state.showArchived,
+  );
+  return `<div class="page-intro"><span class="eyebrow">Experience behind your skills</span><h1>My evidence</h1><p class="muted">Bring together projects you contributed to and certificates you earned. Explain what each item shows and which skills you used.</p></div>
+    <section class="panel evidence-intro"><div><span class="badge neutral">Candidate-submitted · Unverified</span><h2>Your work, with context.</h2><p class="muted">A link gives someone a starting point for review. It does not verify ownership, certificate validity or skill proficiency.</p><div class="evidence-counts"><span><strong>${active.filter((item) => item.kind === "project").length}</strong> projects</span><span><strong>${active.filter((item) => item.kind === "certification").length}</strong> certifications</span></div></div><div class="evidence-add-actions"><button class="button primary" data-action="add-project">+ Add project</button><button class="button secondary" data-action="add-certification">+ Add certification</button></div></section>
+    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>Skill tags are your claims. Your SQL assessment results and learning activity stay separate. These submissions do not change your score or roadmap.</p></div>
+    <div class="section-label"><h2>${state.showArchived ? "Archived evidence" : "Submitted evidence"}</h2><button class="text-button" data-action="evidence-filter">${state.showArchived ? `Show active (${active.length})` : `Show archived (${archived})`}</button></div>
+    ${items.length ? `<div class="evidence-grid">${items.map(evidenceCardMarkup).join("")}</div>` : `<div class="empty-state"><span class="empty-icon" aria-hidden="true">◇</span><div><strong>${state.showArchived ? "No archived evidence" : "Add your first piece of evidence"}</strong><p>${state.showArchived ? "Archived items can be restored whenever you need them." : "Start with a project where you can describe your own contribution."}</p></div></div>`}`;
+}
+
+function evidenceSourceMarkup(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password)
+      throw new Error();
+    return `<a class="evidence-source" href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">Open submitted source <span aria-hidden="true">↗</span><small>${escapeHtml(url.hostname)}</small></a>`;
+  } catch {
+    return '<span class="muted">Source link unavailable</span>';
+  }
+}
+
+function evidenceCardMarkup(item) {
+  const project = item.kind === "project";
+  return `<article class="panel evidence-card" data-evidence-id="${escapeHtml(item.id)}"><div class="button-row spread"><span class="eyebrow">${project ? "Project" : "Certification"}</span><span class="badge neutral">${item.archived ? "Archived · " : ""}Unverified</span></div><h3>${escapeHtml(item.title)}</h3>${project ? '<p class="small muted">Individual contribution recorded</p>' : `<p class="small muted">${escapeHtml(item.issuer)} · Issued ${escapeHtml(item.issued_on)}</p>`}<div class="topic-chips" aria-label="Claimed skills">${item.skills.map((skill) => `<span>${escapeHtml(skill)}</span>`).join("")}</div><details class="evidence-details"><summary>View submitted details</summary><h4>${project ? "Project description" : "What the certificate covers"}</h4><p>${escapeHtml(item.description)}</p>${project ? `<h4>Your contribution</h4><p>${escapeHtml(item.contribution)}</p>` : ""}</details>${evidenceSourceMarkup(item.source_url)}<div class="evidence-card-footer"><span class="small muted">Updated ${escapeHtml(dateLabel(item.updated_at))}</span><div class="button-row">${item.archived ? "" : `<button class="text-button" data-action="edit-evidence" data-id="${escapeHtml(item.id)}">Edit</button>`}<button class="text-button" data-action="archive-evidence" data-id="${escapeHtml(item.id)}">${item.archived ? "Restore" : "Archive"}</button></div></div></article>`;
+}
+
+function evidenceEditorMarkup() {
+  const item = state.evidenceEditor;
+  const project = item.kind === "project";
+  const heading = `${item.id ? "Edit" : "Add"} ${project ? "project" : "certification"}`;
+  return `<div class="page-intro"><span class="eyebrow">My evidence</span><h1>${heading}</h1><p class="muted">Record your experience clearly so it can be reviewed alongside your assessment results.</p></div><div class="evidence-editor-layout"><section class="panel"><form id="evidence-form"><div class="evidence-form-grid"><label>Title<input name="title" maxlength="160" value="${escapeHtml(item.title)}" placeholder="${project ? "Example: Library management database" : "Example: Introduction to Databases with SQL"}" required></label><label>Claimed skills<input name="skills" maxlength="418" value="${escapeHtml((item.skills || []).join(", "))}" placeholder="SQL, Python, REST APIs" aria-describedby="skills-hint" required><span class="field-hint" id="skills-hint">Separate 1–10 skills with commas; up to 40 characters each.</span></label></div>
+      <label>${project ? "Project description" : "What the certificate covers"}<textarea name="description" rows="4" maxlength="2000" required placeholder="${project ? "What does the project do, and what was the outcome?" : "What did you study or practise? Describe any assessment that was required."}">${escapeHtml(item.description)}</textarea></label>
+      ${project ? `<label>Your individual contribution<textarea name="contribution" rows="4" maxlength="2000" required placeholder="Describe the parts you designed, wrote or tested yourself. For team work, distinguish your contribution from the team's.">${escapeHtml(item.contribution)}</textarea></label>` : `<div class="evidence-form-grid"><label>Issuing organisation<input name="issuer" maxlength="160" value="${escapeHtml(item.issuer)}" required></label><label>Issue date<input name="issued_on" type="date" value="${escapeHtml(item.issued_on)}" required></label></div>`}
+      <label>${project ? "Repository or project link" : "Certificate or credential link"}<input name="source_url" type="url" maxlength="2048" value="${escapeHtml(item.source_url)}" placeholder="https://" aria-describedby="source-hint" required><span class="field-hint" id="source-hint">Use an HTTPS page that a reviewer can access. Links are saved as submitted; the app does not open or verify them.</span></label>
+      <div class="button-row evidence-form-actions"><button class="button primary" type="submit">${item.id ? "Save changes" : "Save evidence"}</button><button class="button secondary" type="button" data-action="cancel-evidence">Cancel</button></div></form></section><aside class="panel evidence-guide"><span class="badge neutral">Submitted · Unverified</span><h2>${project ? "Make your role clear" : "Add useful context"}</h2><p>${project ? "A team repository alone does not show who did what. Describe your own work and, where possible, link to relevant commits, documentation or a demo." : "Use the issuer's credential page when available. Record the organisation and issue date as shown on your certificate."}</p><p>Only tag skills this item relates to. A skill tag records your claim; it is not an assessed rating.</p><p class="section-note">You can edit or archive saved evidence later. Unsaved form text is kept only while this tab stays open.</p></aside></div>`;
+}
+
+async function loadEvidence() {
+  state.evidence = (await request("/api/evidence")).evidence;
+}
+
+async function saveEvidence(values) {
+  const item = state.evidenceEditor;
+  const body = {
+    kind: item.kind,
+    title: values.get("title").trim(),
+    description: values.get("description").trim(),
+    source_url: values.get("source_url").trim(),
+    skills: values
+      .get("skills")
+      .split(",")
+      .map((value) => value.trim()),
+  };
+  if (item.kind === "project")
+    body.contribution = values.get("contribution").trim();
+  else {
+    body.issuer = values.get("issuer").trim();
+    body.issued_on = values.get("issued_on");
+  }
+  if (item.id) body.version = item.version;
+  else body.submission_id = item.submission_id;
+  const data = await request(
+    item.id ? `/api/evidence/${item.id}` : "/api/evidence",
+    {
+      method: item.id ? "PUT" : "POST",
+      body,
+    },
+  );
+  state.evidence = [
+    data.evidence,
+    ...state.evidence.filter((entry) => entry.id !== data.evidence.id),
+  ];
+  state.evidenceEditor = null;
+  state.evidenceDirty = false;
+  state.showArchived = false;
+  renderShell();
+  focusContent();
+  showNotice(
+    "Evidence saved as an unverified submission. Your assessment result is unchanged.",
+    true,
+  );
 }
 
 function overviewMarkup() {
@@ -463,6 +556,8 @@ root.addEventListener("submit", (event) => {
       await loadWorkspace();
       renderShell();
       focusContent();
+    } else if (form.id === "evidence-form") {
+      await saveEvidence(values);
     } else if (form.id === "claim-form") {
       const proficiency = Number(values.get("proficiency"));
       if (!Number.isInteger(proficiency) || proficiency < 1 || proficiency > 10)
@@ -481,6 +576,10 @@ root.addEventListener("submit", (event) => {
   });
 });
 
+root.addEventListener("input", (event) => {
+  if (event.target.closest("#evidence-form")) state.evidenceDirty = true;
+});
+
 root.addEventListener("change", (event) => {
   if (state.view !== "quiz" || event.target.name !== "answer") return;
   answersFor(state.attempt)[state.attempt.questions[state.index].id] =
@@ -492,6 +591,12 @@ root.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button || button.disabled || state.busy) return;
   const action = button.dataset.action;
+  if (
+    state.evidenceDirty &&
+    ["overview", "history", "evidence", "cancel-evidence"].includes(action)
+  ) {
+    if (!window.confirm("Discard your unsaved evidence changes?")) return;
+  }
   if (action === "login-tab" || action === "register-tab") {
     const email = document.querySelector('[name="email"]')?.value || "";
     state.authMode = action === "login-tab" ? "login" : "register";
@@ -501,9 +606,9 @@ root.addEventListener("click", (event) => {
   }
   if (action === "logout") {
     if (
-      hasUnsavedAnswers() &&
+      (hasUnsavedAnswers() || state.evidenceDirty) &&
       !window.confirm(
-        "Signing out will clear your unsubmitted answers. Sign out?",
+        "Signing out will clear your unsaved answers and evidence changes. Sign out?",
       )
     )
       return;
@@ -514,6 +619,10 @@ root.addEventListener("click", (event) => {
     state.metadata = null;
     state.attempt = null;
     state.roadmap = null;
+    state.evidence = [];
+    state.evidenceEditor = null;
+    state.evidenceDirty = false;
+    state.showArchived = false;
     state.drafts.clear();
     state.view = "overview";
     state.authMode = "login";
@@ -553,9 +662,57 @@ root.addEventListener("click", (event) => {
   void withBusy(button, async () => {
     if (action === "overview" || action === "history") {
       await loadWorkspace();
+      state.evidenceEditor = null;
+      state.evidenceDirty = false;
       state.view = action;
       renderShell();
       focusContent();
+    } else if (action === "evidence" || action === "cancel-evidence") {
+      await loadEvidence();
+      state.evidenceEditor = null;
+      state.evidenceDirty = false;
+      state.view = "evidence";
+      renderShell();
+      focusContent();
+    } else if (action === "add-project" || action === "add-certification") {
+      state.evidenceEditor = {
+        kind: action === "add-project" ? "project" : "certification",
+        submission_id: crypto.randomUUID(),
+      };
+      state.evidenceDirty = false;
+      renderShell();
+      document.querySelector('#evidence-form [name="title"]').focus();
+    } else if (action === "edit-evidence") {
+      state.evidenceEditor = (
+        await request(`/api/evidence/${button.dataset.id}`)
+      ).evidence;
+      state.evidenceDirty = false;
+      renderShell();
+      focusContent();
+    } else if (action === "evidence-filter") {
+      await loadEvidence();
+      state.showArchived = !state.showArchived;
+      renderShell();
+      focusContent();
+    } else if (action === "archive-evidence") {
+      const item = state.evidence.find(
+        (entry) => entry.id === button.dataset.id,
+      );
+      const data = await request(`/api/evidence/${item.id}/archive`, {
+        method: "PATCH",
+        body: { version: item.version, archived: !item.archived },
+      });
+      state.evidence = state.evidence.map((entry) =>
+        entry.id === item.id ? data.evidence : entry,
+      );
+      renderShell();
+      focusContent();
+      showNotice(
+        data.evidence.archived
+          ? "Evidence archived. You can restore it from Show archived."
+          : "Evidence restored. Find it under Show active.",
+        true,
+      );
     } else if (action === "start") {
       const data = await request("/api/assessments/sql/attempts", {
         method: "POST",
@@ -603,7 +760,7 @@ function hasUnsavedAnswers() {
 }
 
 window.addEventListener("beforeunload", (event) => {
-  if (!hasUnsavedAnswers()) return;
+  if (!hasUnsavedAnswers() && !state.evidenceDirty) return;
   event.preventDefault();
   event.returnValue = "";
 });

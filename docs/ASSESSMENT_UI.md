@@ -32,6 +32,8 @@ For demonstrations, use a visibly named account such as `Demo Candidate` with an
 5. Review the answered/skipped counts in a confirmation dialog before submission.
 6. Read saved results, topic feedback, the original claim snapshot, and explanations.
 7. Reopen submitted results or continue unfinished attempts through My assessments.
+8. Add, edit, archive and restore project/certification submissions through My evidence;
+   see `CANDIDATE_EVIDENCE.md` for the fields, limitations and verification workflow.
 
 The Overview shows recent attempts; My assessments shows up to 50 recent attempts,
 matching the existing API limit. An unfinished attempt appears as Continue assessment.
@@ -81,7 +83,8 @@ Run the existing backend regression suite in a second terminal:
 ```
 
 Expected: all tests end with **OK**. The original assessment suite has 11 tests;
-the learning roadmap milestone adds 14 more. These tests use isolated SQLite, not your
+the learning roadmap milestone adds 14 more and candidate evidence adds 17, for 42 total.
+These tests use isolated SQLite, not your
 PostgreSQL database. They do not create or remove accounts in your normal database.
 
 For a controlled browser demonstration, create a demo account, save SQL self-rating
@@ -152,7 +155,8 @@ The change contains five files. Do not commit the downloaded patch itself or the
 
 - The curated course catalogue, practical roadmap and self-reported activity tracking
   are now implemented; see `LEARNING_ROADMAP.md` for use and validation.
-- Capture project and certification evidence with clear provenance and limitations.
+- Project and certification submissions are now available through My evidence. They
+  remain unverified and separate from assessment scores; see `CANDIDATE_EVIDENCE.md`.
 - Extend beyond the fixed SQL baseline to job-targeted assessment selection and fresh
   practical evaluation tasks. Compare against fixed-assessment and self-report baselines.
 - Add live job ingestion with source/timestamps, separated from frozen evaluation data.

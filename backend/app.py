@@ -9,6 +9,7 @@ from routes.profile import profile_bp
 from routes.career_preferences import career_preferences_bp
 from routes.assessments import assessments_bp
 from routes.roadmaps import roadmaps_bp
+from routes.evidence import evidence_bp
 
 def create_app():
     app = Flask(__name__)
@@ -21,6 +22,7 @@ def create_app():
     app.register_blueprint(profile_bp)
     app.register_blueprint(assessments_bp)
     app.register_blueprint(roadmaps_bp)
+    app.register_blueprint(evidence_bp)
 
     with app.app_context():
         from models.user import User
