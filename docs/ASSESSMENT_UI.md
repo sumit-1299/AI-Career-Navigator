@@ -80,7 +80,8 @@ Run the existing backend regression suite in a second terminal:
 .\.venv\Scripts\python.exe -m unittest discover -s backend/tests -v
 ```
 
-Expected: **11 tests**, ending with **OK**. These tests use isolated SQLite, not your
+Expected: all tests end with **OK**. The original assessment suite has 11 tests;
+the learning roadmap milestone adds 14 more. These tests use isolated SQLite, not your
 PostgreSQL database. They do not create or remove accounts in your normal database.
 
 For a controlled browser demonstration, create a demo account, save SQL self-rating
@@ -149,8 +150,8 @@ The change contains five files. Do not commit the downloaded patch itself or the
 
 ## Next project milestones
 
-- Add a curated, versioned course/resource catalogue and link topic gaps to a practical
-  learning roadmap with verified course URLs.
+- The curated course catalogue, practical roadmap and self-reported activity tracking
+  are now implemented; see `LEARNING_ROADMAP.md` for use and validation.
 - Capture project and certification evidence with clear provenance and limitations.
 - Extend beyond the fixed SQL baseline to job-targeted assessment selection and fresh
   practical evaluation tasks. Compare against fixed-assessment and self-report baselines.

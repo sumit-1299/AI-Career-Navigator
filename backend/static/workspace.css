@@ -193,14 +193,21 @@ small,
 }
 .skip-link {
   position: fixed;
-  top: -80px;
+  top: 15px;
   left: 15px;
-  padding: 12px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  padding: 0;
   background: white;
   z-index: 20;
 }
 .skip-link:focus {
-  top: 15px;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  padding: 12px;
 }
 .notice {
   position: fixed;
@@ -1176,4 +1183,257 @@ dialog h2 {
   font-size: 0.72rem;
   font-weight: 700;
   margin-top: 2px;
+}
+
+/* Evidence-linked learning roadmap */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.roadmap-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 25px;
+  border-color: #d5d4f5;
+}
+.roadmap-entry h2 {
+  margin-bottom: 10px;
+}
+.roadmap-entry p {
+  margin-bottom: 0;
+  font-size: 0.87rem;
+  max-width: 620px;
+}
+.roadmap-entry .button {
+  flex-shrink: 0;
+}
+.roadmap-summary {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  align-items: center;
+  gap: 30px;
+}
+.roadmap-summary h2 {
+  font-size: 1.7rem;
+  margin: 16px 0 8px;
+}
+.roadmap-summary p {
+  font-size: 0.83rem;
+  margin-bottom: 0;
+}
+.roadmap-progress strong {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+}
+.roadmap-progress p {
+  margin-top: 12px;
+}
+.roadmap-steps {
+  display: grid;
+  gap: 24px;
+}
+.roadmap-step-heading {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+.roadmap-step-heading .eyebrow {
+  margin-bottom: 6px;
+}
+.roadmap-step-heading h2 {
+  margin: 0;
+  font-size: 1.23rem;
+  line-height: 1.45;
+}
+.roadmap-step-heading > .badge {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.roadmap-step-number {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--lavender);
+  color: var(--brand);
+  font-weight: 750;
+  flex-shrink: 0;
+}
+.roadmap-reason {
+  margin: 22px 0 10px;
+  font-size: 0.86rem;
+}
+.roadmap-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 30px;
+  margin-top: 24px;
+  padding-top: 23px;
+  border-top: 1px solid var(--line);
+}
+.roadmap-resource-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.roadmap-resource {
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+}
+.roadmap-resource:last-child {
+  border-bottom: 0;
+}
+.roadmap-resource a {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.5;
+  text-underline-offset: 3px;
+}
+.roadmap-resource p {
+  font-size: 0.79rem;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.resource-kind {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.resource-date {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.roadmap-practice {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 22px;
+  min-width: 0;
+}
+.roadmap-practice h3 {
+  margin: 16px 0 12px;
+  line-height: 1.5;
+}
+.roadmap-practice ol {
+  padding-left: 20px;
+  font-size: 0.84rem;
+  line-height: 1.7;
+}
+.roadmap-practice li {
+  margin-bottom: 9px;
+  padding-left: 3px;
+}
+.roadmap-practice details {
+  margin-top: 16px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.roadmap-practice summary {
+  cursor: pointer;
+  color: var(--brand);
+  font-weight: 650;
+}
+.roadmap-practice details p {
+  margin: 12px 0 0;
+}
+.roadmap-practice pre {
+  background: #202b40;
+  color: #edf0ff;
+  padding: 15px;
+  border-radius: 9px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.76rem;
+  line-height: 1.7;
+}
+.roadmap-activity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+.roadmap-activity p {
+  margin: 10px 0 0;
+}
+.roadmap-activity .button {
+  flex-shrink: 0;
+}
+.roadmap-next {
+  margin-top: 26px;
+}
+.roadmap-next p {
+  font-size: 0.88rem;
+}
+.roadmap-next p:last-child {
+  margin-bottom: 0;
+}
+.roadmap-method {
+  margin: 23px 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.roadmap-method summary {
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+@media (max-width: 1100px) {
+  .roadmap-entry {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .roadmap-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .roadmap-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 25px;
+  }
+}
+@media (max-width: 720px) {
+  .roadmap-step-heading {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .roadmap-step-heading > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .roadmap-step-heading > .badge {
+    margin-left: 0;
+    grid-column: 2;
+    justify-self: start;
+  }
+  .roadmap-step-heading h2 {
+    font-size: 1.05rem;
+  }
+  .roadmap-practice {
+    padding: 18px;
+  }
+  .roadmap-activity {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .roadmap-activity .button {
+    width: 100%;
+  }
 }
