@@ -35,3 +35,7 @@ data/raw/
 
 # Downloaded pretrained model weights (recreated by the setup script)
 data/models/
+
+# Local research packets, reviewer files and generated results
+# Keep public code/protocol/AI-authored smoke fixtures under research/ tracked.
+data/research/

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Career Navigator | Independent label review</title>
+    <link rel="stylesheet" href="review.css" />
+    <script src="review.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <span class="brand">Career Navigator / Research</span
+      ><span class="tag">Independent annotation</span>
+    </header>
+    <main>
+      <section class="intro">
+        <p class="eyebrow">Build the reference labels</p>
+        <h1>Read the role. Label the skills.</h1>
+        <p>
+          Judge the job description before seeing model predictions. Your labels
+          will help us measure what the matcher gets right and misses.
+        </p>
+      </section>
+      <section class="panel setup" aria-label="Review setup">
+        <label
+          >1. Load frozen dataset or adjudication packet<input
+            id="packet-file"
+            type="file"
+            accept=".json,application/json"
+        /></label>
+        <label
+          >2. Reviewer ID<input
+            id="reviewer-id"
+            type="text"
+            placeholder="R1"
+            maxlength="40"
+            pattern="[A-Za-z0-9_-]{2,40}"
+            autocomplete="off"
+          /><small
+            >Use R1, R2, or R3; personal names are unnecessary.</small
+          ></label
+        >
+        <label
+          >Resume a saved review (optional)<input
+            id="resume-file"
+            type="file"
+            accept=".json,application/json"
+        /></label>
+        <label class="attestation"
+          ><input id="attestation" type="checkbox" /> I am a human reviewer. I
+          labelled these cases without seeing model predictions; for an
+          independent review, I did not consult the other reviewer’s
+          labels.</label
+        >
+        <p class="small">
+          Files stay in this browser tab. Nothing is uploaded or stored
+          automatically. Export a draft before closing or taking a break.
+        </p>
+      </section>
+      <details class="panel guide" open>
+        <summary>Annotation rules — read before starting</summary>
+        <ul>
+          <li>
+            <strong>Present:</strong> the candidate is expected or preferred to
+            use the skill, including an unambiguous paraphrase. Required and
+            preferred wording both count here.
+          </li>
+          <li>
+            <strong>Absent:</strong> the skill is not supported by the role
+            text, is only company background, or is explicitly not required.
+            This says nothing about a candidate’s ability.
+          </li>
+          <li>
+            <strong>Uncertain:</strong> the wording is genuinely ambiguous.
+            Explain why; uncertain cells are excluded from scoring with coverage
+            reported.
+          </li>
+          <li>
+            Do not infer Python just from Django/Flask, or SQL just from
+            PostgreSQL. Generic HTTP/JSON endpoints alone do not establish REST
+            constraints; use uncertain where necessary.
+          </li>
+          <li>
+            Read each clause: “Python required, Docker not required” supports
+            Python only. Ignore unrelated substrings such as Java inside
+            JavaScript.
+          </li>
+          <li>
+            For present/uncertain labels, include brief supporting quotations
+            and skill names in the case notes. Keep notes about the job, not
+            about a real candidate.
+          </li>
+        </ul>
+        <p class="small">
+          Full protocol:
+          <a
+            href="../docs/RESEARCH_EVALUATION.md"
+            target="_blank"
+            rel="noopener"
+            >RESEARCH_EVALUATION.md</a
+          >. No model labels, scores, anchors or thresholds are displayed here.
+        </p>
+      </details>
+      <p id="notice" role="alert" hidden></p>
+      <section id="review-workspace" hidden>
+        <div class="toolbar">
+          <div>
+            <strong id="packet-label"></strong>
+            <p id="progress" class="small"></p>
+          </div>
+          <label>Jump to case<select id="case-select"></select></label>
+        </div>
+        <div class="columns">
+          <article class="panel posting">
+            <p id="source-label" class="eyebrow"></p>
+            <h2 id="case-title"></h2>
+            <p id="case-meta" class="small"></p>
+            <details>
+              <summary>Source provenance</summary>
+              <p id="source-details" class="small"></p>
+              <a
+                id="source-link"
+                target="_blank"
+                rel="noopener noreferrer"
+                hidden
+                >Open source posting ↗</a
+              >
+              <p class="small">
+                Label the frozen text below. A live source page may have
+                changed.
+              </p>
+            </details>
+            <pre id="case-text"></pre>
+          </article>
+          <section class="panel annotation">
+            <h2>Your labels</h2>
+            <p id="adjudication-note" class="small" hidden></p>
+            <div id="skill-labels"></div>
+            <button id="remaining-absent" class="secondary" type="button">
+              Mark remaining blank labels absent</button
+            ><label
+              >Supporting quotes / uncertainty notes<textarea
+                id="case-notes"
+                rows="5"
+                maxlength="5000"
+                placeholder="Python: ‘develop Python services’. REST APIs: wording is too general to decide."
+              ></textarea></label
+            ><button id="mark-reviewed" class="primary" type="button">
+              Confirm this case reviewed
+            </button>
+            <p id="case-status" class="small"></p>
+          </section>
+        </div>
+        <div class="toolbar navigation">
+          <button id="previous" class="secondary" type="button">
+            Previous case</button
+          ><button id="next" class="secondary" type="button">Next case</button>
+        </div>
+        <section class="panel export">
+          <div>
+            <h2>Keep your review</h2>
+            <p class="small">
+              Save drafts whenever you pause. Export the completed review after
+              every case is confirmed.
+            </p>
+          </div>
+          <div class="actions">
+            <button id="save-draft" class="secondary" type="button">
+              Download draft</button
+            ><button id="save-complete" class="primary" type="button">
+              Download completed review
+            </button>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

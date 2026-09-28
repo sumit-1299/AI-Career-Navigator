@@ -1,0 +1,77 @@
+{
+  "provenance": "AI-authored synthetic development fixtures. Expected labels are draft software-check references, not independent human ground truth.",
+  "cases": [
+    {
+      "id": "smoke-01",
+      "title": "Named backend skills",
+      "description": "Requirements:\nUse Python, SQL and REST APIs to build backend services.\nPreferred skills:\nDocker.",
+      "expected_skills": ["python", "sql", "rest_api", "docker"]
+    },
+    {
+      "id": "smoke-02",
+      "title": "Alias handling",
+      "description": "Write queries in Structured Query Language and maintain Postgres databases.",
+      "expected_skills": ["sql", "postgresql"]
+    },
+    {
+      "id": "smoke-03",
+      "title": "Paraphrased relational operations",
+      "description": "Retrieve table rows, combine tables through joins and calculate grouped aggregates in relational queries.",
+      "expected_skills": ["sql"]
+    },
+    {
+      "id": "smoke-04",
+      "title": "Negated language",
+      "description": "No Java experience is required. JavaScript is required for browser interactions.",
+      "expected_skills": ["javascript"]
+    },
+    {
+      "id": "smoke-05",
+      "title": "Out-of-scope technologies",
+      "description": "Use Rust and Kubernetes to implement infrastructure services.",
+      "expected_skills": []
+    },
+    {
+      "id": "smoke-06",
+      "title": "Related technology is not equivalent",
+      "description": "Maintain the Django models and views in our web application.",
+      "expected_skills": ["django"]
+    },
+    {
+      "id": "smoke-07",
+      "title": "Version control wording",
+      "description": "Track source code changes through commits, branches and merges in a distributed version control system.",
+      "expected_skills": ["git"]
+    },
+    {
+      "id": "smoke-08",
+      "title": "Distinct names",
+      "description": "Build JavaScript interfaces using a NoSQL data store. MySQL is also mentioned in the company overview.",
+      "expected_skills": ["javascript"]
+    },
+    {
+      "id": "smoke-09",
+      "title": "Qualified sentence",
+      "description": "Python is required, but Docker is not required for this role.",
+      "expected_skills": ["python"]
+    },
+    {
+      "id": "smoke-10",
+      "title": "Framework pair",
+      "description": "Implement Flask blueprints and maintain Django models for two services.",
+      "expected_skills": ["flask", "django"]
+    },
+    {
+      "id": "smoke-11",
+      "title": "Specific REST terminology",
+      "description": "Design resource-oriented RESTful APIs with HTTP methods and stateless client-server interactions.",
+      "expected_skills": ["rest_api"]
+    },
+    {
+      "id": "smoke-12",
+      "title": "Preferred technologies count",
+      "description": "Preferred skills:\nJava programming and Git version control would be useful.",
+      "expected_skills": ["java", "git"]
+    }
+  ]
+}
