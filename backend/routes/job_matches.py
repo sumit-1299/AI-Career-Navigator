@@ -58,7 +58,11 @@ def existing_submission(user_id, key):
 
 
 def repeat_response(record, job, mode):
-    if record.job != job or record.result["mode"] != mode:
+    same_job = record.job == job
+    if record.job.get("source_type") == job.get("source_type") == "greenhouse":
+        # Retry identity is the immutable posting version, not the current fetch timestamp.
+        same_job = all(record.job.get(key) == job.get(key) for key in ("live_job_id", "posting_version", "content_hash"))
+    if not same_job or record.result["mode"] != mode:
         return error("This request was already saved with different input. Open a new comparison to change it.", 409)
     return {"status": "success", "comparison": record.to_dict()}, 200
 
@@ -89,12 +93,20 @@ def comparisons():
     except ValueError as exception:
         return error(str(exception), 400)
     job = {"title": title, "description": description, "source_url": url, "source_type": "candidate_pasted"}
+    return save_comparison(user_id, key, job, mode)
+
+
+def save_comparison(user_id, key, job, mode, max_fragments=60):
+    """Save the exact server-resolved job and candidate inputs for either source."""
     prior = existing_submission(user_id, key)
     if prior:
         return repeat_response(prior, job, mode)
     snapshot = candidate_snapshot(user_id)
     try:
-        result = build_comparison(description, snapshot, mode)
+        result = build_comparison(job["description"], snapshot, mode, max_fragments=max_fragments)
+        if job["source_type"] == "greenhouse":
+            result["policy_version"] = "live-job-comparison-v1"
+            result["input_limits"] = {"max_fragments": max_fragments, "truncated": False}
     except SemanticUnavailable as exception:
         return error(str(exception), 503)
     except ValueError as exception:

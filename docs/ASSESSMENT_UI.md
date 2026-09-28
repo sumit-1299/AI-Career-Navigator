@@ -173,3 +173,9 @@ References for the implementation approach:
 - Flask templates: https://flask.palletsprojects.com/en/stable/tutorial/templates/
 - Flask static assets: https://flask.palletsprojects.com/en/stable/tutorial/static/
 - HTML dialogs: https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/dialog
+
+## Live-job milestone
+
+The **Live jobs** navigation item now retrieves selected employer boards and sends
+a selected posting through the same evidence-aware comparison flow. See
+[LIVE_JOBS.md](LIVE_JOBS.md) for refresh behavior, source limitations and the demo.

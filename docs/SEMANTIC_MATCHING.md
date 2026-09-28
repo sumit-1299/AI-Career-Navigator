@@ -231,3 +231,13 @@ git --no-pager status
 ```
 
 The downloaded patch, model weights and private `.env` are not part of this commit.
+
+## Live posting integration
+
+See [LIVE_JOBS.md](LIVE_JOBS.md). Live comparisons resolve their text on the server
+and save source/version/freshness metadata with the candidate snapshot. They allow
+up to 300 fragments without truncation; pasted descriptions retain the original
+60-fragment limit. The live policy identifier is `live-job-comparison-v1`; the
+model, vocabulary and heuristic thresholds are unchanged. Running an alternative
+method from a live result reopens the current cached posting and uses current
+profile data, so it is not by itself a controlled frozen-input experiment.

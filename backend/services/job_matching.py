@@ -13,7 +13,7 @@ OPTIONAL = re.compile(r"\b(preferred|optional|bonus|desirable)\b|nice[ -]to[ -]h
 REQUIRED = re.compile(r"\b(required|requirements|essential|must)\b|minimum qualifications", re.I)
 
 
-def fragments(description):
+def fragments(description, max_fragments=60):
     parts = []
     priority = "mentioned"
     for raw in re.split(r"[\r\n;]+|(?<=[.!?])\s+", description):
@@ -37,8 +37,8 @@ def fragments(description):
             snippet = " ".join(words[start:start + 45])
             parts.append({"text": snippet, "importance": importance,
                           "review_needed": bool(NEGATION.search(text))})
-    if len(parts) > 60:
-        raise ValueError("Use at most 60 description fragments. Shorten the pasted description and try again.")
+    if len(parts) > max_fragments:
+        raise ValueError(f"This description exceeds the {max_fragments}-fragment comparison limit. Use a shorter excerpt in Compare a job; the full posting has not been compared.")
     return parts
 
 
@@ -63,8 +63,8 @@ def profile_support(snapshot):
     return support, sorted(set(unmapped), key=str.casefold)
 
 
-def build_comparison(description, snapshot, mode, encoder=None):
-    parts = fragments(description)
+def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60):
+    parts = fragments(description, max_fragments)
     if not parts:
         raise ValueError("Enter a job description containing words.")
     suggestions = {}

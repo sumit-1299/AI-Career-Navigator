@@ -75,7 +75,7 @@ function comparisonMarkup() {
     ${result.skills.length ? `<div class="match-skill-list">${result.skills.map(comparisonSkillMarkup).join("")}</div>` : '<div class="empty-state"><div><strong>No skill mappings found in this vocabulary</strong><p>The job may require skills outside the current scope. This does not mean you are unsuitable.</p></div></div>'}
     ${result.manual_review.length ? `<section class="panel match-review"><h2>Read these passages manually</h2><p class="small muted">Negated or qualified statements were excluded from automatic requirement mapping.</p>${result.manual_review.map((item) => `<blockquote class="match-quote">${escapeHtml(item.text)}</blockquote>`).join("")}</section>` : ""}
     <details class="panel match-review"><summary>Unmapped text and profile tags</summary><p class="small muted">${escapeHtml(result.scope)}</p><h3>Job passages without a mapping</h3>${result.unassigned_fragments.length ? `<ul>${result.unassigned_fragments.map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : '<p class="small muted">No whole passage was left unmapped. Individual requirements can still be missed.</p>'}<h3>Profile tags outside the vocabulary</h3><p class="small muted">${escapeHtml(result.unmapped_candidate_tags.join(", ") || "None in this snapshot.")}</p></details>
-    <details class="panel match-review"><summary>Source and comparison method</summary><p class="small muted">Source: candidate-pasted text. Vacancy availability has not been checked.</p>${saved.job.source_url ? evidenceSourceMarkup(saved.job.source_url) : ""}<pre class="match-source-text">${escapeHtml(saved.job.description)}</pre><p class="small muted">Profile captured ${escapeHtml(dateLabel(saved.candidate_snapshot.captured_at))}. ${saved.candidate_snapshot.evidence.length} active evidence records were included. Saved snapshots retain their original details even if the profile is edited or an item is archived later.</p><p class="small muted">Policy: ${escapeHtml(result.policy_version)} · Vocabulary: ${escapeHtml(result.catalog_version)}</p>${result.model ? `<p class="small muted">Model: ${escapeHtml(result.model.id)}<br>Revision: ${escapeHtml(result.model.revision)}<br>Semantic suggestions use cosine ≥ ${result.suggestion_policy.minimum_cosine} and a best-versus-next margin ≥ ${result.suggestion_policy.minimum_margin}. These are uncalibrated prototype settings, not confidence probabilities.</p>` : '<p class="small muted">Keyword mode uses only the curated names and aliases. No embedding model was run.</p>'}</details>${matchHistoryMarkup()}`;
+    <details class="panel match-review"><summary>Source and comparison method</summary><p class="small muted">${comparisonSourceLabel(saved.job)}</p>${saved.job.source_url ? evidenceSourceMarkup(saved.job.source_url) : ""}<pre class="match-source-text">${escapeHtml(saved.job.description)}</pre><p class="small muted">Profile captured ${escapeHtml(dateLabel(saved.candidate_snapshot.captured_at))}. ${saved.candidate_snapshot.evidence.length} active evidence records were included. Saved snapshots retain their original details even if the profile is edited or an item is archived later.</p><p class="small muted">Policy: ${escapeHtml(result.policy_version)} · Vocabulary: ${escapeHtml(result.catalog_version)}</p>${result.model ? `<p class="small muted">Model: ${escapeHtml(result.model.id)}<br>Revision: ${escapeHtml(result.model.revision)}<br>Semantic suggestions use cosine ≥ ${result.suggestion_policy.minimum_cosine} and a best-versus-next margin ≥ ${result.suggestion_policy.minimum_margin}. These are uncalibrated prototype settings, not confidence probabilities.</p>` : '<p class="small muted">Keyword mode uses only the curated names and aliases. No embedding model was run.</p>'}</details>${matchHistoryMarkup()}`;
 }
 
 async function submitMatch(values) {
@@ -135,6 +135,16 @@ async function handleMatchAction(action, button) {
     form.elements.description.value = MATCH_DEMO.description;
     form.elements.source_url.value = "";
     state.matchDirty = true;
+    return;
+  } else if (state.comparison.job.source_type === "greenhouse") {
+    await openLiveJob(
+      state.comparison.job.live_job_id,
+      otherComparisonMode(action),
+    );
+    showNotice(
+      "Review the current cached posting before comparing. A new comparison uses your current profile records.",
+      true,
+    );
     return;
   } else {
     state.matchDraft = freshMatchDraft({

@@ -22,6 +22,10 @@ const state = {
   comparison: null,
   matchDraft: null,
   matchDirty: false,
+  jobsData: null,
+  jobFilters: { q: "", location: "", board: "", page: 1 },
+  selectedJob: null,
+  jobCompareDraft: null,
   index: 0,
   drafts: new Map(),
 };
@@ -71,7 +75,7 @@ function showNotice(message, success = false) {
 
 async function request(
   path,
-  { method = "GET", body, auth = true, retry = true } = {},
+  { method = "GET", body, auth = true, retry = true, timeout = 15000 } = {},
 ) {
   const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -84,7 +88,7 @@ async function request(
       cache: "no-store",
       credentials: "omit",
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeout),
     });
   } catch {
     throw new Error(
@@ -93,7 +97,7 @@ async function request(
   }
   if (response.status === 401 && auth && retry) {
     await reauthenticate();
-    return request(path, { method, body, auth, retry: false });
+    return request(path, { method, body, auth, retry: false, timeout });
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -197,13 +201,15 @@ function renderShell() {
   const onHistory = state.view === "history";
   const onEvidence = state.view === "evidence";
   const onMatches = state.view === "matches";
-  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence || onMatches ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence && !onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button><button class="nav-button ${onMatches ? "active" : ""}" data-action="matches" ${onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">⌕</span>Compare a job</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>SQL foundations v1<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onMatches ? "Job comparison" : onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "SQL foundations"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
+  const onJobs = state.view === "jobs";
+  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence || onMatches || onJobs ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence && !onMatches && !onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button><button class="nav-button ${onMatches ? "active" : ""}" data-action="matches" ${onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">⌕</span>Compare a job</button><button class="nav-button ${onJobs ? "active" : ""}" data-action="jobs" ${onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◎</span>Live jobs</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>SQL foundations v1<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onJobs ? "Live jobs" : onMatches ? "Job comparison" : onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "SQL foundations"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
   const main = document.querySelector("#main-content");
   if (state.view === "quiz") main.innerHTML = quizMarkup();
   else if (state.view === "results") main.innerHTML = resultsMarkup();
   else if (state.view === "roadmap") main.innerHTML = roadmapMarkup();
   else if (state.view === "evidence") main.innerHTML = evidenceMarkup();
   else if (state.view === "matches") main.innerHTML = matchesMarkup();
+  else if (state.view === "jobs") main.innerHTML = jobsMarkup();
   else if (state.view === "history")
     main.innerHTML = `<div class="page-intro"><span class="eyebrow">Your evidence over time</span><h1>My assessments</h1><p class="muted">Revisit submitted results or continue an unfinished attempt.</p></div>${historyMarkup(state.history)}<p class="section-note">Showing up to 50 recent attempts. Repeating these same questions can reflect familiarity and is not independent evidence of skill improvement.</p>`;
   else main.innerHTML = overviewMarkup();
@@ -563,6 +569,10 @@ root.addEventListener("submit", (event) => {
       await loadWorkspace();
       renderShell();
       focusContent();
+    } else if (form.id === "job-filter-form") {
+      await submitJobFilters(values);
+    } else if (form.id === "job-compare-form") {
+      await submitLiveComparison(values);
     } else if (form.id === "match-form") {
       await submitMatch(new FormData(form));
     } else if (form.id === "evidence-form") {
@@ -603,9 +613,14 @@ root.addEventListener("click", (event) => {
   const action = button.dataset.action;
   if (
     state.evidenceDirty &&
-    ["overview", "history", "evidence", "cancel-evidence", "matches"].includes(
-      action,
-    )
+    [
+      "overview",
+      "history",
+      "evidence",
+      "cancel-evidence",
+      "matches",
+      "jobs",
+    ].includes(action)
   ) {
     if (!window.confirm("Discard your unsaved evidence changes?")) return;
   }
@@ -618,6 +633,7 @@ root.addEventListener("click", (event) => {
       "matches",
       "open-match",
       "new-match",
+      "jobs",
     ].includes(action)
   ) {
     if (!window.confirm("Discard this unsaved job comparison?")) return;
@@ -649,6 +665,7 @@ root.addEventListener("click", (event) => {
     state.evidenceDirty = false;
     state.showArchived = false;
     clearMatchState();
+    clearJobsState();
     state.drafts.clear();
     state.view = "overview";
     state.authMode = "login";
@@ -713,6 +730,12 @@ root.addEventListener("click", (event) => {
       ].includes(action)
     ) {
       await handleMatchAction(action, button);
+    } else if (
+      ["jobs", "refresh-board", "open-job", "back-jobs", "jobs-page"].includes(
+        action,
+      )
+    ) {
+      await handleJobsAction(action, button);
     } else if (action === "add-project" || action === "add-certification") {
       state.evidenceEditor = {
         kind: action === "add-project" ? "project" : "certification",
