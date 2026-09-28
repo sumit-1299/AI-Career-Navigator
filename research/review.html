@@ -6,7 +6,7 @@
     <meta name="referrer" content="no-referrer" />
     <title>Career Navigator | Independent label review</title>
     <link rel="stylesheet" href="review.css" />
-    <script src="review.js" defer></script>
+    <script src="review.js?v=resume-feedback-2" defer></script>
   </head>
   <body>
     <header>
@@ -50,7 +50,12 @@
             id="resume-file"
             type="file"
             accept=".json,application/json"
-        /></label>
+            aria-describedby="resume-status"
+          /><small id="resume-status" role="status" aria-live="polite"
+            >Load the original dataset first, then choose your saved review
+            JSON.</small
+          ></label
+        >
         <label class="attestation"
           ><input id="attestation" type="checkbox" /> I am a human reviewer. I
           labelled these cases without seeing model predictions; for an

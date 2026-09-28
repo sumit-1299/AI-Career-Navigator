@@ -19,7 +19,8 @@ let packet = null,
   index = 0,
   annotations = Object.create(null),
   dirty = false,
-  loadedPacketName = "";
+  loadedPacketName = "",
+  loadedReviewName = "";
 const $ = (id) => document.getElementById(id);
 function notice(text) {
   $("notice").textContent = text;
@@ -45,7 +46,14 @@ async function hash(value) {
 async function readFile(file) {
   if (!file) throw new Error("Choose a JSON file.");
   if (file.size > 20 * 1024 * 1024) throw new Error("File exceeds 20 MiB.");
-  return JSON.parse(await file.text());
+  const text = await file.text();
+  try {
+    return JSON.parse(text.replace(/^\uFEFF/, ""));
+  } catch {
+    throw new Error(
+      "This file is not valid JSON. Download the JSON attachment itself, not the answer sheet or a saved web page.",
+    );
+  }
 }
 function adjudicating() {
   return packet?.schema_version === "career-skill-adjudication-packet-v1";
@@ -158,6 +166,10 @@ async function loadPacket(file) {
   index = 0;
   annotations = Object.create(null);
   dirty = false;
+  loadedReviewName = "";
+  $("resume-file").value = "";
+  $("resume-status").textContent =
+    "Dataset loaded. Choose the saved review JSON for this original dataset.";
   $("attestation").checked = false;
   $("review-workspace").hidden = false;
   for (const row of cases) {
@@ -239,8 +251,15 @@ function updateProgress() {
   const complete = cases.filter((row) =>
     reviewValid(getAnnotation(row.id)),
   ).length;
+  const filled = cases.reduce(
+    (total, row) =>
+      total +
+      KEYS.filter((key) => VALUES.includes(getAnnotation(row.id).labels[key]))
+        .length,
+    0,
+  );
   $("progress").textContent =
-    `${complete} of ${cases.length} cases confirmed. ${dirty ? "Changes since last download." : ""}`;
+    `${filled} of ${cases.length * KEYS.length} labels filled. ${complete} of ${cases.length} cases confirmed. ${dirty ? "Changes since last download." : ""}`;
   $("case-status").textContent = reviewValid(getAnnotation(cases[index].id))
     ? "Case confirmed. Editing a label or note will reopen it."
     : "Read the full text, label all skills, add notes where needed, then confirm.";
@@ -255,6 +274,7 @@ $("packet-file").addEventListener("change", async (event) => {
   const file = input.files[0];
   if (!file) return;
   input.disabled = true;
+  $("resume-file").disabled = true;
   $("packet-status").textContent = `Loading ${file.name}…`;
   try {
     if (await loadPacket(file)) {
@@ -274,6 +294,7 @@ $("packet-file").addEventListener("change", async (event) => {
     notice(error.message);
   } finally {
     input.disabled = false;
+    $("resume-file").disabled = false;
   }
 });
 $("skill-labels").addEventListener("change", (event) => {
@@ -385,20 +406,33 @@ function download(complete) {
 $("save-draft").addEventListener("click", () => download(false));
 $("save-complete").addEventListener("click", () => download(true));
 $("resume-file").addEventListener("change", async (event) => {
+  const input = event.currentTarget;
+  const file = input.files[0];
+  if (!file) return;
+  input.disabled = true;
+  $("packet-file").disabled = true;
+  $("resume-status").textContent = `Loading ${file.name}…`;
   try {
     if (!dataset)
       throw new Error(
         "Load the original dataset or adjudication packet first.",
       );
-    const review = await readFile(event.target.files[0]);
-    if (
-      review.schema_version !== "career-skill-review-v1" ||
-      review.dataset_id !== dataset.dataset_id ||
-      review.dataset_fingerprint !== dataset.fingerprint ||
-      review.kind !== (adjudicating() ? "adjudication" : "independent")
-    )
+    const review = await readFile(file);
+    if (review?.schema_version !== "career-skill-review-v1")
       throw new Error(
-        "This review belongs to a different packet or review kind.",
+        "Choose a saved review JSON, such as pilot_v1_AI_DRAFT.json. The original pilot-v1.json belongs in the first picker.",
+      );
+    if (review.dataset_id !== dataset.dataset_id)
+      throw new Error(
+        "This draft is for a different exported dataset. Load the exact original pilot-v1.json used to create the draft; a new export will not match.",
+      );
+    if (review.dataset_fingerprint !== dataset.fingerprint)
+      throw new Error(
+        "This draft does not match the contents of the loaded dataset. Use its unchanged original dataset file.",
+      );
+    if (review.kind !== (adjudicating() ? "adjudication" : "independent"))
+      throw new Error(
+        "This review type does not match the loaded packet. Load the original dataset for an ordinary draft, or the adjudication packet for an adjudication draft.",
       );
     if (
       !Array.isArray(review.annotations) ||
@@ -408,6 +442,7 @@ $("resume-file").addEventListener("change", async (event) => {
     const restored = Object.create(null);
     for (const row of review.annotations) {
       if (
+        !row ||
         !cases.some((item) => item.id === row.case_id) ||
         restored[row.case_id] ||
         !row.labels ||
@@ -435,22 +470,37 @@ $("resume-file").addEventListener("change", async (event) => {
         JSON.stringify(packet.parent_review_hashes)
     )
       throw new Error("Adjudication belongs to different original reviews.");
-    if (dirty && !confirm("Replace unsaved labels with this saved review?"))
+    if (dirty && !confirm("Replace unsaved labels with this saved review?")) {
+      input.value = "";
+      $("resume-status").textContent =
+        "Selection cancelled. Your current labels and unsaved changes remain loaded.";
       return;
+    }
     annotations = restored;
     $("reviewer-id").value =
       typeof review.reviewer_id === "string" ? review.reviewer_id : "";
     $("attestation").checked = review.without_model_predictions === true;
     dirty = false;
     index = 0;
+    loadedReviewName = file.name;
     renderCase();
-    notice(
-      "Saved review loaded. Confirm unfinished cases before completing it.",
-    );
+    const aiAssisted =
+      review.annotation_origin === "ai_assisted" ||
+      review.annotations.some((row) => row.annotation_origin === "ai_assisted");
+    const guidance = aiAssisted
+      ? "AI-assisted draft: keep the human-review declaration unchecked and use Download draft. Filled labels are separate from confirmed human reviews."
+      : "Confirm unfinished cases before completing the review.";
+    $("resume-status").textContent =
+      `Loaded ${file.name} — ${cases.length} cases. ${$("progress").textContent} ${guidance}`;
+    notice(`Saved review loaded. ${guidance}`);
   } catch (error) {
+    input.value = "";
+    $("resume-status").textContent =
+      `Could not load ${file.name}: ${error.message}${loadedReviewName ? ` Your previously loaded review (${loadedReviewName}) and current labels remain in place.` : " Your current labels remain in place."}`;
     notice(error.message);
   } finally {
-    event.target.value = "";
+    input.disabled = false;
+    $("packet-file").disabled = false;
   }
 });
 window.addEventListener("beforeunload", (event) => {
