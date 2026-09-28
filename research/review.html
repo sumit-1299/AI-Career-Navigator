@@ -28,7 +28,11 @@
             id="packet-file"
             type="file"
             accept=".json,application/json"
-        /></label>
+            aria-describedby="packet-status"
+          /><small id="packet-status" role="status" aria-live="polite"
+            >No dataset loaded yet.</small
+          ></label
+        >
         <label
           >2. Reviewer ID<input
             id="reviewer-id"

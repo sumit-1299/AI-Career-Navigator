@@ -18,7 +18,8 @@ let packet = null,
   cases = [],
   index = 0,
   annotations = Object.create(null),
-  dirty = false;
+  dirty = false,
+  loadedPacketName = "";
 const $ = (id) => document.getElementById(id);
 function notice(text) {
   $("notice").textContent = text;
@@ -150,7 +151,7 @@ async function loadPacket(file) {
       "Replace this unsaved review? Download a draft first if you need it.",
     )
   )
-    return;
+    return false;
   packet = loaded;
   dataset = data;
   cases = selected;
@@ -174,6 +175,7 @@ async function loadPacket(file) {
     `${adjudicating() ? "Adjudication" : "Independent review"} · ${cases.length} cases${dataset.kind === "synthetic_smoke" ? " · SYNTHETIC PRACTICE ONLY" : ""}`;
   $("notice").hidden = true;
   renderCase();
+  return true;
 }
 function renderCase() {
   const row = cases[index],
@@ -249,12 +251,29 @@ function changeCurrent() {
   updateProgress();
 }
 $("packet-file").addEventListener("change", async (event) => {
+  const input = event.currentTarget;
+  const file = input.files[0];
+  if (!file) return;
+  input.disabled = true;
+  $("packet-status").textContent = `Loading ${file.name}…`;
   try {
-    await loadPacket(event.target.files[0]);
+    if (await loadPacket(file)) {
+      loadedPacketName = file.name;
+      $("packet-status").textContent =
+        `Loaded ${file.name} — ${cases.length} cases. Your review appears below the annotation rules.`;
+    } else {
+      input.value = "";
+      $("packet-status").textContent =
+        `Selection cancelled. ${loadedPacketName} remains loaded with your unsaved review.`;
+    }
   } catch (error) {
+    // Clear failed selections so the same file can be chosen again after correction.
+    input.value = "";
+    $("packet-status").textContent =
+      `Could not load ${file.name}: ${error.message}${loadedPacketName ? ` ${loadedPacketName} remains loaded.` : ""}`;
     notice(error.message);
   } finally {
-    event.target.value = "";
+    input.disabled = false;
   }
 });
 $("skill-labels").addEventListener("change", (event) => {
