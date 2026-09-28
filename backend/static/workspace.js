@@ -17,6 +17,11 @@ const state = {
   evidenceEditor: null,
   evidenceDirty: false,
   showArchived: false,
+  matchMetadata: null,
+  matchHistory: [],
+  comparison: null,
+  matchDraft: null,
+  matchDirty: false,
   index: 0,
   drafts: new Map(),
 };
@@ -191,12 +196,14 @@ function renderAuth(email = "") {
 function renderShell() {
   const onHistory = state.view === "history";
   const onEvidence = state.view === "evidence";
-  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>SQL foundations v1<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "SQL foundations"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
+  const onMatches = state.view === "matches";
+  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence || onMatches ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence && !onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button><button class="nav-button ${onMatches ? "active" : ""}" data-action="matches" ${onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">⌕</span>Compare a job</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>SQL foundations v1<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onMatches ? "Job comparison" : onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "SQL foundations"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
   const main = document.querySelector("#main-content");
   if (state.view === "quiz") main.innerHTML = quizMarkup();
   else if (state.view === "results") main.innerHTML = resultsMarkup();
   else if (state.view === "roadmap") main.innerHTML = roadmapMarkup();
   else if (state.view === "evidence") main.innerHTML = evidenceMarkup();
+  else if (state.view === "matches") main.innerHTML = matchesMarkup();
   else if (state.view === "history")
     main.innerHTML = `<div class="page-intro"><span class="eyebrow">Your evidence over time</span><h1>My assessments</h1><p class="muted">Revisit submitted results or continue an unfinished attempt.</p></div>${historyMarkup(state.history)}<p class="section-note">Showing up to 50 recent attempts. Repeating these same questions can reflect familiarity and is not independent evidence of skill improvement.</p>`;
   else main.innerHTML = overviewMarkup();
@@ -556,6 +563,8 @@ root.addEventListener("submit", (event) => {
       await loadWorkspace();
       renderShell();
       focusContent();
+    } else if (form.id === "match-form") {
+      await submitMatch(new FormData(form));
     } else if (form.id === "evidence-form") {
       await saveEvidence(values);
     } else if (form.id === "claim-form") {
@@ -578,6 +587,7 @@ root.addEventListener("submit", (event) => {
 
 root.addEventListener("input", (event) => {
   if (event.target.closest("#evidence-form")) state.evidenceDirty = true;
+  if (event.target.closest("#match-form")) state.matchDirty = true;
 });
 
 root.addEventListener("change", (event) => {
@@ -593,9 +603,24 @@ root.addEventListener("click", (event) => {
   const action = button.dataset.action;
   if (
     state.evidenceDirty &&
-    ["overview", "history", "evidence", "cancel-evidence"].includes(action)
+    ["overview", "history", "evidence", "cancel-evidence", "matches"].includes(
+      action,
+    )
   ) {
     if (!window.confirm("Discard your unsaved evidence changes?")) return;
+  }
+  if (
+    state.matchDirty &&
+    [
+      "overview",
+      "history",
+      "evidence",
+      "matches",
+      "open-match",
+      "new-match",
+    ].includes(action)
+  ) {
+    if (!window.confirm("Discard this unsaved job comparison?")) return;
   }
   if (action === "login-tab" || action === "register-tab") {
     const email = document.querySelector('[name="email"]')?.value || "";
@@ -606,9 +631,9 @@ root.addEventListener("click", (event) => {
   }
   if (action === "logout") {
     if (
-      (hasUnsavedAnswers() || state.evidenceDirty) &&
+      (hasUnsavedAnswers() || state.evidenceDirty || state.matchDirty) &&
       !window.confirm(
-        "Signing out will clear your unsaved answers and evidence changes. Sign out?",
+        "Signing out will clear your unsaved work in this tab. Sign out?",
       )
     )
       return;
@@ -623,6 +648,7 @@ root.addEventListener("click", (event) => {
     state.evidenceEditor = null;
     state.evidenceDirty = false;
     state.showArchived = false;
+    clearMatchState();
     state.drafts.clear();
     state.view = "overview";
     state.authMode = "login";
@@ -662,6 +688,7 @@ root.addEventListener("click", (event) => {
   void withBusy(button, async () => {
     if (action === "overview" || action === "history") {
       await loadWorkspace();
+      clearMatchDraft();
       state.evidenceEditor = null;
       state.evidenceDirty = false;
       state.view = action;
@@ -669,11 +696,23 @@ root.addEventListener("click", (event) => {
       focusContent();
     } else if (action === "evidence" || action === "cancel-evidence") {
       await loadEvidence();
+      clearMatchDraft();
       state.evidenceEditor = null;
       state.evidenceDirty = false;
       state.view = "evidence";
       renderShell();
       focusContent();
+    } else if (
+      [
+        "matches",
+        "new-match",
+        "open-match",
+        "demo-match",
+        "compare-keyword",
+        "compare-semantic",
+      ].includes(action)
+    ) {
+      await handleMatchAction(action, button);
     } else if (action === "add-project" || action === "add-certification") {
       state.evidenceEditor = {
         kind: action === "add-project" ? "project" : "certification",
@@ -760,7 +799,7 @@ function hasUnsavedAnswers() {
 }
 
 window.addEventListener("beforeunload", (event) => {
-  if (!hasUnsavedAnswers() && !state.evidenceDirty) return;
+  if (!hasUnsavedAnswers() && !state.evidenceDirty && !state.matchDirty) return;
   event.preventDefault();
   event.returnValue = "";
 });

@@ -24,7 +24,8 @@ body {
 }
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 button,
@@ -46,6 +47,7 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
+select:focus-visible,
 summary:focus-visible {
   outline: 3px solid #9697ed;
   outline-offset: 4px;
@@ -328,7 +330,10 @@ input[type="password"],
 input[type="text"],
 input[type="number"],
 #evidence-form input,
-#evidence-form textarea {
+#evidence-form textarea,
+#match-form input,
+#match-form textarea,
+#match-form select {
   width: 100%;
   border: 1px solid #d9dee7;
   border-radius: 9px;
@@ -1056,7 +1061,9 @@ dialog h2 {
     margin: 0;
     gap: 2px;
     width: 100%;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
   }
   .sidebar-note {
     display: none;
@@ -1612,5 +1619,163 @@ dialog h2 {
   }
   .evidence-editor-layout {
     gap: 18px;
+  }
+}
+
+/* Saved job comparisons */
+.match-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(240px, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+#match-form textarea {
+  display: block;
+  resize: vertical;
+  line-height: 1.6;
+}
+#match-form input,
+#match-form textarea,
+#match-form select {
+  font-size: 0.86rem;
+  font-weight: 400;
+  min-width: 0;
+}
+.match-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 25px;
+}
+.match-summary strong {
+  display: block;
+  color: var(--brand);
+  font-size: 2rem;
+  margin-bottom: 9px;
+}
+.match-summary span {
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.match-skill-list {
+  display: grid;
+  gap: 24px;
+}
+.match-skill h2 {
+  margin: 0;
+}
+.match-skill h3 {
+  font-size: 0.9rem;
+  margin-bottom: 15px;
+}
+.match-skill-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 30px;
+  margin-top: 24px;
+}
+.match-quote {
+  margin: 0 0 14px;
+  padding: 14px 17px;
+  background: var(--paper);
+  border-left: 3px solid #c9c9ed;
+  border-radius: 0 8px 8px 0;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.match-quote footer {
+  color: var(--muted);
+  font-size: 0.71rem;
+  margin-top: 10px;
+}
+.match-claims {
+  padding: 0;
+  list-style: none;
+  margin: 0 0 18px;
+}
+.match-claims li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.match-claims strong,
+.match-claims span {
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+.match-claims span {
+  color: var(--muted);
+  font-size: 0.73rem;
+  margin-top: 5px;
+}
+.match-assessment {
+  margin-top: 20px;
+  font-size: 0.8rem;
+}
+.match-assessment p {
+  margin: 12px 0 8px;
+}
+.match-assessment ul {
+  padding-left: 20px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.match-guidance {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  margin: 20px 0 0;
+  font-size: 0.83rem;
+  color: var(--muted);
+}
+.match-review {
+  margin-top: 24px;
+  overflow-wrap: anywhere;
+}
+.match-review > summary {
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--brand);
+}
+.match-review[open] > summary {
+  margin-bottom: 20px;
+}
+.match-review ul {
+  padding-left: 20px;
+  font-size: 0.83rem;
+  line-height: 1.8;
+}
+.match-review h3 {
+  margin-top: 22px;
+  font-size: 0.9rem;
+}
+.match-source-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 0.83rem;
+  line-height: 1.8;
+  padding: 20px;
+  border-radius: 9px;
+  background: var(--paper);
+}
+@media (max-width: 1100px) {
+  .match-editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 720px) {
+  .match-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 25px 16px;
+  }
+  .match-skill-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .account .text-button {
+    white-space: nowrap;
   }
 }

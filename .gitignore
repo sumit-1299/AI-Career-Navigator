@@ -32,3 +32,6 @@ build/
 
 # Raw external research datasets
 data/raw/
+
+# Downloaded pretrained model weights (recreated by the setup script)
+data/models/

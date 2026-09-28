@@ -34,6 +34,8 @@ For demonstrations, use a visibly named account such as `Demo Candidate` with an
 7. Reopen submitted results or continue unfinished attempts through My assessments.
 8. Add, edit, archive and restore project/certification submissions through My evidence;
    see `CANDIDATE_EVIDENCE.md` for the fields, limitations and verification workflow.
+9. Compare a pasted job description with saved claims and assessment evidence through
+   Compare a job; see `SEMANTIC_MATCHING.md` for local pretrained-model setup and scope.
 
 The Overview shows recent attempts; My assessments shows up to 50 recent attempts,
 matching the existing API limit. An unfinished attempt appears as Continue assessment.
@@ -83,7 +85,8 @@ Run the existing backend regression suite in a second terminal:
 ```
 
 Expected: all tests end with **OK**. The original assessment suite has 11 tests;
-the learning roadmap milestone adds 14 more and candidate evidence adds 17, for 42 total.
+the learning roadmap milestone adds 14, candidate evidence adds 17, and job matching
+adds 20, for 62 total. Two matching tests require the optional pretrained model setup.
 These tests use isolated SQLite, not your
 PostgreSQL database. They do not create or remove accounts in your normal database.
 
@@ -157,6 +160,8 @@ The change contains five files. Do not commit the downloaded patch itself or the
   are now implemented; see `LEARNING_ROADMAP.md` for use and validation.
 - Project and certification submissions are now available through My evidence. They
   remain unverified and separate from assessment scores; see `CANDIDATE_EVIDENCE.md`.
+- Pasted-job comparisons now include a keyword baseline and local pretrained semantic
+  suggestions, with immutable candidate snapshots; see `SEMANTIC_MATCHING.md`.
 - Extend beyond the fixed SQL baseline to job-targeted assessment selection and fresh
   practical evaluation tasks. Compare against fixed-assessment and self-report baselines.
 - Add live job ingestion with source/timestamps, separated from frozen evaluation data.

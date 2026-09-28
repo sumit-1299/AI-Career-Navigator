@@ -7,6 +7,7 @@
   <title>AI Career Navigator | Candidate workspace</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="{{ url_for('static', filename='workspace.css') }}">
+  <script src="{{ url_for('static', filename='matching.js') }}" defer></script>
   <script src="{{ url_for('static', filename='workspace.js') }}" defer></script>
 </head>
 <body>
@@ -27,7 +28,7 @@
     <form id="reauth-form">
       <span class="eyebrow">Session expired</span>
       <h2 id="reauth-title">Sign in to continue</h2>
-      <p class="muted">Your answers are still in this tab. Sign in to the same account to continue your action.</p>
+      <p class="muted">Your unsaved work is still in this tab. Sign in to the same account to continue your action.</p>
       <label>Email<input id="reauth-email" type="email" autocomplete="username" readonly></label>
       <label>Password<input id="reauth-password" type="password" autocomplete="current-password" required></label>
       <p id="reauth-error" class="error-text" role="alert"></p>
