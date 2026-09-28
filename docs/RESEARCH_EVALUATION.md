@@ -187,6 +187,53 @@ and results under `data/research/` are ignored by Git. Store them privately with
 backup; Git is not their backup. Code, protocol and explicitly synthetic fixtures
 under `research/` are tracked for portfolio review.
 
+## Optional development diagnostic using an AI-assisted draft
+
+When independent human labels are not available, an explicitly AI-assisted draft
+can support preliminary debugging. This is a separate workflow, not a replacement
+for Steps 4–5. Use the original `pilot-v1.json` and `pilot_v1_AI_DRAFT.json` supplied
+for that exact packet, or a saved draft that preserves its AI-provenance markers.
+Leave the human-review declaration unchecked. Do not rename duplicate copies as
+R1/R2 or claim that assisted review was blind independent annotation.
+
+From the project root in PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe .\backend\scripts\research_evaluation.py diagnose --dataset .\data\research\pilot-v1.json --draft .\data\research\pilot_v1_AI_DRAFT.json --out .\data\research\ai-diagnostic-v1
+```
+
+This command always uses **development cases only** (12 in the default packet).
+It has no test-split option. Both matchers receive the same frozen descriptions,
+and neither candidate records nor the live database are read. The installed local
+MiniLM model and existing semantic dependencies are required; there are no new
+packages for this command. An unavailable model fails the run without writing a
+partial success report. Existing output directories are never overwritten.
+
+The output folder contains:
+
+- `report.md`: prominently marked AI-assisted diagnostic, method agreement with
+  the draft, positive/uncertain skill support, and disagreements to inspect.
+- `results.json`: a distinct `career-skill-ai-diagnostic-v1` schema, AI reference
+  labels, draft fingerprint, predictions, source/model hashes, mapped passages
+  and draft notes. It does not contain human inter-reviewer agreement statistics.
+
+Precision/recall/F1 are relative to the **unvalidated AI draft**. A disagreement
+may reflect a matcher error, an AI-label error or an unclear annotation policy.
+These figures are not independently validated accuracy, proficiency, suitability
+or proof of novelty. No sampling interval can establish validity of the AI labels;
+this report therefore does not present one. Uncertain cells are excluded equally
+for both methods, and zero-positive skills must not be treated as validated.
+
+Inspect the disagreement passages before modifying extraction logic. Save a new
+versioned run after any development change. Nothing in `diagnose` trains or tunes
+the model or changes your packet/review files. If test cases or labels influenced
+your choices, obtain a fresh untouched test set for final evaluation.
+
+Known AI-provenance markers at the review level or in individual annotations are
+rejected by `evaluate` and `prepare-adjudication`, even if completion/declaration
+checkboxes are changed. This check preserves declared provenance; it cannot
+authenticate a human reviewer or detect undisclosed AI assistance.
+
 ## Step 4 — reconcile reviewer disagreements
 
 ```powershell

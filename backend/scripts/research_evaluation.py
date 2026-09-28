@@ -1,4 +1,4 @@
-"""CLI: freeze cached jobs, reconcile blind reviews, and compare shipped matchers."""
+"""CLI: freeze jobs, diagnose AI drafts, and evaluate independently reviewed labels."""
 import argparse
 from pathlib import Path
 import sys
@@ -8,6 +8,7 @@ from services.research_evaluation import (ROOT, KEYS, digest, load_json, make_li
     markdown_report, now_iso, reconcile, run_evaluation, seal_dataset, text_digest,
     validate_dataset, write_new_json)
 from services.semantic_encoder import SemanticUnavailable
+from services.research_diagnostic import diagnostic_markdown, run_diagnostic
 
 
 def export_cache(args):
@@ -87,6 +88,21 @@ def evaluate(args):
     save_run(args.out, report)
 
 
+def diagnose(args):
+    directory = Path(args.out)
+    if directory.exists():
+        raise ValueError('Output directory already exists. Choose a new diagnostic directory to preserve the earlier result.')
+    report = run_diagnostic(load_json(args.dataset), load_json(args.draft))
+    # Inference and validation finish before any output directory is created.
+    directory.mkdir(parents=True, exist_ok=False)
+    write_new_json(directory / 'results.json', report)
+    (directory / 'report.md').write_text(diagnostic_markdown(report), encoding='utf-8')
+    print('PRELIMINARY AI-ASSISTED DIAGNOSTIC: not independently human-validated research results.')
+    print(f"Compared {report['case_count']} development jobs; {report['test_cases_not_scored']} test jobs were not scored.")
+    print(f"Report: {directory / 'report.md'}")
+    print(f"Disagreement details: {directory / 'results.json'}")
+
+
 def synthetic_packet():
     fixture = load_json(ROOT / 'research' / 'synthetic_smoke.json')
     cases, gold = [], {}
@@ -121,6 +137,11 @@ def main():
     smoke_parser = commands.add_parser('smoke', help='Run labelled synthetic checks; never research evidence')
     smoke_parser.add_argument('--out', default='data/research/smoke-v1')
     smoke_parser.set_defaults(run=smoke)
+    diagnostic = commands.add_parser('diagnose', help='Compare development predictions with an AI draft; not human-validated research results')
+    diagnostic.add_argument('--dataset', required=True)
+    diagnostic.add_argument('--draft', required=True)
+    diagnostic.add_argument('--out', required=True)
+    diagnostic.set_defaults(run=diagnose)
     for name, function in [('prepare-adjudication', create_adjudication), ('evaluate', evaluate)]:
         sub = commands.add_parser(name)
         sub.add_argument('--dataset', required=True)

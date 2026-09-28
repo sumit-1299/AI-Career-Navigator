@@ -12,7 +12,7 @@ product vision; not every part of that vision is implemented.
 | Candidate evidence | Projects/certificates with skill tags, edits, version checks and archive/restore | Records remain unverified; no automatic credential verification |
 | Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions for ten skill concepts | Thresholds uncalibrated; no overall hiring probability, suitability rank or proficiency score |
 | Live jobs | Selected Canonical/Razorpay boards, cached freshness, filtering and versioned comparison snapshots | Limited employer coverage, manual refresh, no market-wide feed |
-| Evaluation tools | Frozen job exporter, independent annotation page, adjudication and paired extraction metrics | Human reviews and actual pilot findings still pending |
+| Evaluation tools | Frozen job exporter, independent annotation page, adjudication, paired extraction metrics and a separate AI-draft development diagnostic | Human validation remains pending; agreement with an AI draft is preliminary and cannot establish accuracy |
 | Research contribution | Candidate evidence, uncertainty and source snapshots form the proposed approach | Literature gap/novelty and added decision value are not established by working features alone |
 | Training | Pretrained model used for inference | No project-specific supervised training or fine-tuning completed |
 
@@ -20,6 +20,9 @@ The next research task is documented in
 [RESEARCH_EVALUATION.md](RESEARCH_EVALUATION.md). It measures job-skill extraction
 first. A separate study is needed to test whether assessment/evidence context
 improves skill-gap decisions. Synthetic smoke-test metrics are not research results.
+The `diagnose` command can inspect development disagreements against an explicitly
+AI-assisted draft while human validation is pending. It does not score test jobs,
+train a model or satisfy the independent-review requirements of `evaluate`.
 
 ## Earlier career knowledge base
 

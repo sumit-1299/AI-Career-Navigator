@@ -162,11 +162,23 @@ def make_live_dataset(records, size=24, seed='career-pilot-2026-09-v1'):
         'near_duplicate_review_required': True})
 
 
+def is_ai_assisted_review(review):
+    """Detect declared AI provenance; this cannot authenticate a reviewer's identity."""
+    if not isinstance(review, dict):
+        return False
+    rows = review.get('annotations')
+    return review.get('annotation_origin') == 'ai_assisted' or (
+        isinstance(rows, list) and any(isinstance(row, dict) and
+        row.get('annotation_origin') == 'ai_assisted' for row in rows))
+
+
 def validate_review(dataset, review, kind='independent', required_ids=None):
     if not isinstance(review, dict) or review.get('schema_version') != REVIEW_SCHEMA:
         raise ValueError('Choose a supported review JSON file.')
     if review.get('dataset_id') != dataset['dataset_id'] or review.get('dataset_fingerprint') != dataset['fingerprint']:
         raise ValueError('Review belongs to a different dataset or dataset version.')
+    if is_ai_assisted_review(review):
+        raise ValueError('AI-assisted labels are not independent human reviews. Use diagnose for an explicitly preliminary development comparison.')
     if review.get('kind') != kind or review.get('complete') is not True or review.get('without_model_predictions') is not True:
         raise ValueError('Use a completed review with the independent-from-model-predictions attestation.')
     reviewer = review.get('reviewer_id')
