@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import create_app
 from extensions import db
 from models.job_comparison import JobComparison
-from services.job_matching import build_comparison, fragments
+from services.job_matching import EXTRACTION_VERSION, build_comparison, fragments
 from services.semantic_encoder import SemanticUnavailable, get_encoder, model_status
 from services.skill_catalog import SKILLS, canonical_key, keyword_keys
 from services.sql_assessment import QUESTIONS
@@ -199,6 +199,14 @@ class JobComparisonApiTests(unittest.TestCase):
         self.assertNotIn("candidate_snapshot", summary)
         metadata = self.client.get("/api/job-matches/metadata", headers=self.headers).get_json()
         self.assertEqual(len(metadata["skills"]), 10)
+
+    def test_context_review_reasons_and_extraction_version_are_saved(self):
+        saved = self.create(self.payload(description="Our company develops Python products. Responsibilities:\nUse HTTP/REST and Git."))
+        result = saved['result']
+        self.assertEqual({row['skill_key'] for row in result['skills']}, {'rest_api', 'git'})
+        self.assertEqual(result['extraction_version'], EXTRACTION_VERSION)
+        self.assertEqual(result['manual_review'][0]['reason_code'], 'company_context')
+        self.assertEqual(self.client.get(f"/api/job-matches/{saved['id']}", headers=self.headers).get_json()['comparison'], saved)
 
     def test_comparison_does_not_change_assessment_or_roadmap(self):
         attempt = self.assessment(("b", "c", "a", "b", "b", None))

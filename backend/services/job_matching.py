@@ -5,38 +5,93 @@ import re
 from services.semantic_encoder import MODEL_ID, MODEL_REVISION, get_encoder
 from services.skill_catalog import BY_KEY, CATALOG_VERSION, RELATIONS, SKILLS, canonical_key, keyword_keys
 
-POLICY_VERSION = "pasted-job-comparison-v1"
+POLICY_VERSION = "pasted-job-comparison-v2"
+EXTRACTION_VERSION = "skill-extraction-context-v2"
 SIMILARITY_THRESHOLD = 0.58
 MARGIN_THRESHOLD = 0.08
 NEGATION = re.compile(r"\b(no|not|without|never|neither|nor|cannot)\b|\b(?:isn|aren|wasn|weren|don|doesn|didn|needn|mustn|shouldn|can|couldn|wouldn|won)['’]t\b", re.I)
 OPTIONAL = re.compile(r"\b(preferred|optional|bonus|desirable)\b|nice[ -]to[ -]have", re.I)
 REQUIRED = re.compile(r"\b(required|requirements|essential|must)\b|minimum qualifications", re.I)
 
+REQUIRED_HEADINGS = {"requirements", "required skills", "minimum qualifications", "must have",
+    "qualifications", "what we are looking for", "what we are looking for in you",
+    "who you are", "what you bring", "your skills", "skills and experience"}
+OPTIONAL_HEADINGS = {"preferred", "preferred skills", "nice to have", "nice-to-have", "optional",
+    "nice-to-have skills", "nice-to-have skills we would value", "additional skills",
+    "additional skills that you might also bring"}
+ROLE_HEADINGS = {"responsibilities", "about the role", "the role entails", "what you will do",
+    "what you'll do", "what you’ll do", "what your day will look like", "what you will focus on",
+    "your role", "duties"}
+BACKGROUND_HEADINGS = {"about us", "about the company", "company overview", "company background",
+    "our company", "benefits", "what we offer", "what we offer you", "what we offer colleagues",
+    "about our company", "who we are"}
+# This is a narrow wording rule, not named-entity recognition. It does not contain
+# employer names or case IDs from the development packet.
+PORTFOLIO_STATEMENT = re.compile(
+    r"^.{1,80}?\b(?:has|have)\s+(?:(?:substantial|many|several|numerous|existing|various|multiple)\s+)?"
+    r"(?:projects|products)\s+(?:in|using|built with)\b", re.I)
+COMPANY_STATEMENT = re.compile(
+    r"^(?:(?:our|the)\s+(?:company|business|organisation|organization))\s+"
+    r"(?:uses?|offers?|provides?|develops?|builds?|maintains?)\b", re.I)
+ROLE_REFERENCE = re.compile(
+    r"\b(?:you|your|candidates?|applicants?|this role|the role|this position|the position|"
+    r"this job|the team|our team)\b", re.I)
+ROLE_ACTION = re.compile(
+    r"^(?:design|build|write|develop|maintain|implement|use|work|operate|deploy|manage|lead|"
+    r"create|test|debug|support|contribute|architect|improve)\b", re.I)
+ROLE_QUALIFICATION = re.compile(r"^(?:experience|knowledge|proficiency|familiarity|skills?)\s+(?:with|in|of)\b", re.I)
+# Split a mixed company/candidate sentence only at an explicit candidate clause.
+# General mixed negation remains subject to the existing manual-review policy.
+PASSAGE_BOUNDARY = re.compile(
+    r"[\r\n;]+|(?<=[.!?])\s+|,?\s+\b(?:and|but|while|whereas)\s+"
+    r"(?=(?:you\b|your\b|this role\b|the role\b|this position\b|the position\b))", re.I)
+
+
+def review_context(text, background):
+    if NEGATION.search(text):
+        return "negation", "Negation detected; read this passage before treating it as a requirement."
+    role_link = ROLE_REFERENCE.search(text) or ROLE_ACTION.search(text) or ROLE_QUALIFICATION.search(text)
+    if not role_link and (PORTFOLIO_STATEMENT.search(text) or COMPANY_STATEMENT.search(text)):
+        return "company_context", "Company or product-portfolio wording. Confirm that this skill applies to the candidate's work."
+    if background and not (role_link or REQUIRED.search(text) or OPTIONAL.search(text)):
+        return "background_section", "Company-background or benefits section. Confirm a role-specific requirement before using this passage."
+    return None, None
+
 
 def fragments(description, max_fragments=60):
     parts = []
     priority = "mentioned"
-    for raw in re.split(r"[\r\n;]+|(?<=[.!?])\s+", description):
+    background = False
+    for raw in PASSAGE_BOUNDARY.split(description):
         text = raw.strip(" \t•*-–—")
         if not text:
             continue
         heading = text.rstrip(":").casefold()
-        if heading in {"requirements", "required skills", "minimum qualifications", "must have"}:
+        if heading in REQUIRED_HEADINGS:
             priority = "required"
+            background = False
             continue
-        if heading in {"preferred", "preferred skills", "nice to have", "nice-to-have", "optional"}:
+        if heading in OPTIONAL_HEADINGS:
             priority = "optional"
+            background = False
             continue
-        if heading in {"responsibilities", "about us", "benefits", "about the role"}:
+        if heading in ROLE_HEADINGS:
             priority = "mentioned"
+            background = False
+            continue
+        if heading in BACKGROUND_HEADINGS:
+            priority = "mentioned"
+            background = True
             continue
         importance = "optional" if OPTIONAL.search(text) else "required" if REQUIRED.search(text) else priority
+        review_code, review_reason = review_context(text, background)
         # Bound each input while retaining every fragment. The encoder also rejects token overflow.
         words = text.split()
         for start in range(0, len(words), 45):
             snippet = " ".join(words[start:start + 45])
             parts.append({"text": snippet, "importance": importance,
-                          "review_needed": bool(NEGATION.search(text))})
+                          "review_needed": review_reason is not None,
+                          "review_code": review_code, "review_reason": review_reason})
     if len(parts) > max_fragments:
         raise ValueError(f"This description exceeds the {max_fragments}-fragment comparison limit. Use a shorter excerpt in Compare a job; the full posting has not been compared.")
     return parts
@@ -85,7 +140,8 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
     manual_review = []
     for index, part in enumerate(parts):
         if part["review_needed"]:
-            manual_review.append({"text": part["text"], "reason": "Negation detected; read this passage before treating it as a requirement."})
+            manual_review.append({"text": part["text"], "reason": part["review_reason"],
+                                  "reason_code": part["review_code"]})
             continue
         direct = keyword_keys(part["text"])
         found = [(key, {"method": "keyword", "text": part["text"], "importance": part["importance"]}) for key in direct]
@@ -127,7 +183,8 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
                             "job_sources": rows[key], "candidate_claims": support[key], "related_claims": related,
                             "assessment": assessment, "guidance": guidance})
     direct_rows = [row for row in result_rows if row["mapping"] == "keyword"]
-    return {"policy_version": POLICY_VERSION, "catalog_version": CATALOG_VERSION, "mode": mode,
+    return {"policy_version": POLICY_VERSION, "extraction_version": EXTRACTION_VERSION,
+            "catalog_version": CATALOG_VERSION, "mode": mode,
             "model": {"id": MODEL_ID, "revision": MODEL_REVISION, "runtime": "onnx-cpu", "pooling": "attention-mask-mean-l2", "max_tokens": 256} if mode == "semantic" else None,
             "suggestion_policy": {"minimum_cosine": SIMILARITY_THRESHOLD, "minimum_margin": MARGIN_THRESHOLD,
                                   "validation_status": "heuristic_not_calibrated"} if mode == "semantic" else None,

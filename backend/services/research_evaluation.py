@@ -11,7 +11,7 @@ import re
 import subprocess
 from uuid import uuid4
 
-from services.job_matching import build_comparison, SIMILARITY_THRESHOLD, MARGIN_THRESHOLD
+from services.job_matching import build_comparison, SIMILARITY_THRESHOLD, MARGIN_THRESHOLD, EXTRACTION_VERSION
 from services.semantic_encoder import MODEL_ID, MODEL_REVISION, get_encoder
 from services.skill_catalog import CATALOG_VERSION, SKILLS
 
@@ -323,7 +323,7 @@ def provenance():
     return {'git_commit': commit, 'source_file_sha256': files, 'python': platform.python_version(),
             'dependencies': versions, 'model': {'id': MODEL_ID, 'revision': MODEL_REVISION},
             'minimum_cosine': SIMILARITY_THRESHOLD, 'minimum_margin': MARGIN_THRESHOLD,
-            'catalog_version': CATALOG_VERSION, 'fragment_limit': 300,
+            'catalog_version': CATALOG_VERSION, 'extraction_version': EXTRACTION_VERSION, 'fragment_limit': 300,
             'candidate_context': 'empty for every case; extraction only'}
 
 

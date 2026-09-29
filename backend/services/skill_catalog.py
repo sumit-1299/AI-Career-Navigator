@@ -14,7 +14,7 @@ SKILLS = [
     {"key": "sql", "label": "SQL", "aliases": ["SQL", "Structured Query Language"],
      "anchor": "SQL relational database queries. Retrieve and filter table rows, join tables and aggregate grouped records.",
      "esco_uri": ESCO_BASE + "598de5b0-5b58-4ea7-8058-a4bc4d18c742"},
-    {"key": "rest_api", "label": "REST APIs", "aliases": ["REST API", "REST APIs", "RESTful API", "RESTful APIs", "RESTful services", "Representational State Transfer"],
+    {"key": "rest_api", "label": "REST APIs", "aliases": ["REST API", "REST APIs", "RESTful API", "RESTful APIs", "RESTful services", "Representational State Transfer", "HTTP/REST"],
      "anchor": "REST API development. Design HTTP endpoints for web services with JSON requests and responses, resources, GET, POST, PUT and DELETE.",
      "esco_uri": None},
     {"key": "django", "label": "Django", "aliases": ["Django"],
@@ -53,6 +53,9 @@ PATTERNS = {
     skill["key"]: re.compile(r"(?<!\w)(?:" + "|".join(re.escape(alias).replace(r"\ ", r"\s+") for alias in sorted(skill["aliases"], key=len, reverse=True)) + r")(?!\w)", re.I)
     for skill in SKILLS
 }
+# Explicit slash notation is technical REST wording. Bare "rest", generic HTTP,
+# JSON and APIs stay outside the alias rule. Allow spacing around the slash.
+HTTP_REST = re.compile(r"(?<!\w)HTTP\s*/\s*REST(?!\w)", re.I)
 
 
 def canonical_key(name):
@@ -60,4 +63,5 @@ def canonical_key(name):
 
 
 def keyword_keys(text):
-    return [key for key, pattern in PATTERNS.items() if pattern.search(text)]
+    return [key for key, pattern in PATTERNS.items()
+            if pattern.search(text) or (key == "rest_api" and HTTP_REST.search(text))]

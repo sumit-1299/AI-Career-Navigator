@@ -10,7 +10,7 @@ product vision; not every part of that vision is implemented.
 | SQL assessment | Six-question diagnostic, immutable attempts, accuracy/coverage and topic feedback | Draft content; independent content review and proficiency validation pending |
 | Learning roadmap | Curated SQL resources and practice steps linked to diagnostic results | Progress is self-reported; broader Python/REST assessment and roadmaps pending |
 | Candidate evidence | Projects/certificates with skill tags, edits, version checks and archive/restore | Records remain unverified; no automatic credential verification |
-| Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions for ten skill concepts | Thresholds uncalibrated; no overall hiring probability, suitability rank or proficiency score |
+| Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions, with context review rules and HTTP/REST wording support | Rules and thresholds need independent validation; no overall hiring probability, suitability rank or proficiency score |
 | Live jobs | Selected Canonical/Razorpay boards, cached freshness, filtering and versioned comparison snapshots | Limited employer coverage, manual refresh, no market-wide feed |
 | Evaluation tools | Frozen job exporter, independent annotation page, adjudication, paired extraction metrics and a separate AI-draft development diagnostic | Human validation remains pending; agreement with an AI draft is preliminary and cannot establish accuracy |
 | Research contribution | Candidate evidence, uncertainty and source snapshots form the proposed approach | Literature gap/novelty and added decision value are not established by working features alone |
@@ -23,6 +23,9 @@ improves skill-gap decisions. Synthetic smoke-test metrics are not research resu
 The `diagnose` command can inspect development disagreements against an explicitly
 AI-assisted draft while human validation is pending. It does not score test jobs,
 train a model or satisfy the independent-review requirements of `evaluate`.
+The [context correction](MATCHING_CONTEXT.md) resolves two observed development
+disagreements against the AI draft. Both methods still produce identical skill
+sets on that subset; these rule changes do not establish a semantic advantage.
 
 ## Earlier career knowledge base
 
@@ -49,5 +52,6 @@ are not yet a fully integrated recommendation model or labelled training dataset
 - [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md)
 - [CANDIDATE_EVIDENCE.md](CANDIDATE_EVIDENCE.md)
 - [SEMANTIC_MATCHING.md](SEMANTIC_MATCHING.md)
+- [MATCHING_CONTEXT.md](MATCHING_CONTEXT.md)
 - [LIVE_JOBS.md](LIVE_JOBS.md)
 - [RESEARCH_EVALUATION.md](RESEARCH_EVALUATION.md)

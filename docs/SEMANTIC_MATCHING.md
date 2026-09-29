@@ -1,5 +1,9 @@
 # Semantic skill matching — pasted job comparison
 
+For the current context rules, HTTP/REST alias and versioned development findings,
+see [MATCHING_CONTEXT.md](MATCHING_CONTEXT.md). The installation and earlier test
+counts below describe the original semantic-matching milestone.
+
 This milestone adds **Compare a job** to the candidate workspace. It connects a pasted
 job description to saved skill claims, active project/certification submissions and
 the latest submitted SQL diagnostic. It provides a keyword baseline and real local
@@ -119,8 +123,8 @@ not complete integration of all ESCO/O*NET occupations and skills.
    or interpreted as verified proficiency.
 6. Display the latest submitted SQL assessment separately. An all-skipped latest
    attempt remains unassessed; the matcher does not select the candidate's best score.
-7. Preserve unmapped passages and candidate tags, and show negated statements for
-   manual review. A missing record is treated as a need for evidence, not a demonstrated
+7. Preserve unmapped passages and candidate tags, and show negated statements and
+   suspected company-background context for manual review with reasons. A missing record is treated as a need for evidence, not a demonstrated
    deficit. A mapped passage can still contain additional requirements that were missed.
 
 Related technologies remain distinct: Django/Flask can be shown as related to Python,
@@ -144,7 +148,8 @@ exceed its 256-word-piece limit. The initial use case is English backend job des
 | Pooling | Attention-mask mean, followed by L2 normalization |
 | Model status | Pretrained inference; no project-specific fine-tuning |
 | Catalogue | `backend-skills-2026-09-27-v1` |
-| Matching policy | `pasted-job-comparison-v1` |
+| Matching policy | `pasted-job-comparison-v2` |
+| Extraction rules | `skill-extraction-context-v2` |
 
 The publisher's model card identifies the model as Apache-2.0. Model/tokenizer files
 are downloaded from the publisher, not bundled into this repository. Setup records the

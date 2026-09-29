@@ -222,6 +222,7 @@ class LiveJobsApiTests(unittest.TestCase):
         self.assertEqual(saved['job']['description'], job['description'])
         self.assertEqual(saved['job']['content_hash'], job['content_hash'])
         self.assertEqual(saved['result']['policy_version'], 'live-job-comparison-v1')
+        self.assertEqual(saved['result']['extraction_version'], 'skill-extraction-context-v2')
         self.assertEqual(saved['candidate_snapshot']['skills'][0]['proficiency'], 7)
         self.assertEqual(self.client.get('/api/job-matches/' + saved['id'], headers=self.other).status_code, 404)
         self.assertEqual(self.client.get('/api/jobs/' + job['id'], headers=self.other).status_code, 200)
