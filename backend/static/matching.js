@@ -39,7 +39,7 @@ function matchesMarkup() {
   if (state.comparison && !state.matchDraft) return comparisonMarkup();
   const draft = state.matchDraft || (state.matchDraft = freshMatchDraft());
   const ready = state.matchMetadata.semantic_model.available;
-  return `<div class="page-intro"><span class="eyebrow">Connect your experience to a role</span><h1>Compare a job</h1><p class="muted">Paste a job description to explore its skill requirements alongside your saved claims, projects, certificates and SQL assessment.</p></div>
+  return `<div class="page-intro"><span class="eyebrow">Connect your experience to a role</span><h1>Compare a job</h1><p class="muted">Paste a job description to explore its skill requirements alongside your saved claims, projects, certificates and assessments.</p></div>
     <div class="match-editor-layout"><section class="panel"><form id="match-form"><label>Job title<input name="title" maxlength="160" value="${escapeHtml(draft.title)}" placeholder="Junior Python Backend Developer" required></label><label>Job description<textarea name="description" rows="10" minlength="20" maxlength="8000" aria-describedby="match-description-hint" placeholder="Paste the responsibilities and skill requirements here…" required>${escapeHtml(draft.description)}</textarea><span class="field-hint" id="match-description-hint">20–8,000 characters. Preserve headings such as Requirements and Preferred skills.</span></label><label>Source link (optional)<input name="source_url" type="url" maxlength="2048" value="${escapeHtml(draft.source_url)}" placeholder="https://company.example/careers/job"></label><label>Comparison method<select name="mode"><option value="semantic" ${draft.mode === "semantic" ? "selected" : ""} ${ready ? "" : "disabled"}>Keywords + semantic suggestions</option><option value="keyword" ${draft.mode === "keyword" ? "selected" : ""}>Keyword baseline</option></select></label>${ready ? '<p class="small muted">Semantic suggestions use a pretrained model running locally. Suggested links still need review.</p>' : '<p class="small muted">The semantic model is not ready on this server. Keyword comparison is available.</p>'}<div class="button-row evidence-form-actions"><button class="button primary" type="submit">Compare and save</button><button class="button secondary" type="button" data-action="demo-match">Use example description</button></div></form></section>
     <aside class="panel evidence-guide"><span class="badge neutral">Research prototype</span><h2>What this comparison shows</h2><p>Named skills and possible semantic links are displayed separately. A missing record means we need more evidence.</p><p>Each comparison saves the job text and profile records it used. Later profile edits do not rewrite a saved comparison.</p><h3>Current vocabulary</h3><div class="topic-chips">${state.matchMetadata.skills.map((skill) => `<span>${escapeHtml(skill.label)}</span>`).join("")}</div><p class="section-note">This is a pasted description, not a live vacancy check. The example description is fictional.</p></aside></div>${matchHistoryMarkup()}`;
 }
@@ -58,7 +58,10 @@ function claimMarkup(claim, related = false) {
 
 function comparisonSkillMarkup(row) {
   const assessment = row.assessment;
-  return `<article class="panel match-skill"><div class="button-row spread"><h2>${escapeHtml(row.label)}</h2><span class="badge ${row.mapping === "keyword" ? "neutral" : "amber"}">${row.mapping === "keyword" ? "Named in description" : "Semantic suggestion · Review"}</span></div><div class="match-skill-columns"><section><h3>Job text</h3>${row.job_sources.map((source) => `<blockquote class="match-quote">${escapeHtml(source.text)}<footer>${source.importance === "required" ? "Required wording" : source.importance === "optional" ? "Optional / preferred wording" : "Mentioned in description"} · ${source.method === "keyword" ? "Keyword / alias" : `Semantic suggestion · cosine ${Number(source.similarity).toFixed(3)}`}</footer></blockquote>`).join("")}</section><section><h3>Your saved evidence</h3>${row.candidate_claims.length ? `<ul class="match-claims">${row.candidate_claims.map((claim) => claimMarkup(claim)).join("")}</ul>` : '<p class="small muted">No direct skill claim recorded for this concept.</p>'}${row.related_claims.length ? `<details class="evidence-details"><summary>Related claims (${row.related_claims.length})</summary><p class="small muted">Related technologies are not treated as equivalent skills.</p><ul class="match-claims">${row.related_claims.map((claim) => claimMarkup(claim, true)).join("")}</ul></details>` : ""}${assessment ? `<div class="match-assessment"><span class="badge neutral">SQL diagnostic snapshot</span><p>${escapeHtml(percent(assessment.result.accuracy_on_answered_percent))} accuracy · ${assessment.result.answered_count}/${assessment.result.question_count} answered</p><ul>${assessment.result.topics.map((topic) => `<li>${escapeHtml(topic.topic)}: ${topic.correct_count} correct, ${topic.incorrect_count} incorrect, ${topic.unanswered_count} unassessed</li>`).join("")}</ul><button class="text-button" data-action="open-attempt" data-id="${escapeHtml(assessment.attempt_id)}">Open SQL result & roadmap →</button></div>` : '<p class="small muted">No assessment result recorded for this skill.</p>'}</section></div><p class="match-guidance">${escapeHtml(row.guidance)}</p></article>`;
+  const supported = state.assessmentCatalog.some(
+    (item) => item.skill_key === row.skill_key,
+  );
+  return `<article class="panel match-skill"><div class="button-row spread"><h2>${escapeHtml(row.label)}</h2><span class="badge ${row.mapping === "keyword" ? "neutral" : "amber"}">${row.mapping === "keyword" ? "Named in description" : "Semantic suggestion · Review"}</span></div><div class="match-skill-columns"><section><h3>Job text</h3>${row.job_sources.map((source) => `<blockquote class="match-quote">${escapeHtml(source.text)}<footer>${source.importance === "required" ? "Required wording" : source.importance === "optional" ? "Optional / preferred wording" : "Mentioned in description"} · ${source.method === "keyword" ? "Keyword / alias" : `Semantic suggestion · cosine ${Number(source.similarity).toFixed(3)}`}</footer></blockquote>`).join("")}</section><section><h3>Your saved evidence</h3>${row.candidate_claims.length ? `<ul class="match-claims">${row.candidate_claims.map((claim) => claimMarkup(claim)).join("")}</ul>` : '<p class="small muted">No direct skill claim recorded for this concept.</p>'}${row.related_claims.length ? `<details class="evidence-details"><summary>Related claims (${row.related_claims.length})</summary><p class="small muted">Related technologies are not treated as equivalent skills.</p><ul class="match-claims">${row.related_claims.map((claim) => claimMarkup(claim, true)).join("")}</ul></details>` : ""}${assessment ? `<div class="match-assessment"><span class="badge neutral">${escapeHtml(row.label)} diagnostic snapshot</span><p>${escapeHtml(percent(assessment.result.accuracy_on_answered_percent))} accuracy · ${assessment.result.answered_count}/${assessment.result.question_count} answered</p><ul>${assessment.result.topics.map((topic) => `<li>${escapeHtml(topicLabel(topic.topic))}: ${topic.correct_count} correct, ${topic.incorrect_count} incorrect, ${topic.unanswered_count} unassessed</li>`).join("")}</ul><button class="text-button" data-action="open-attempt" data-id="${escapeHtml(assessment.attempt_id)}">Open ${escapeHtml(row.label)} result & roadmap →</button></div>` : `<p class="small muted">No assessment result recorded for this skill.</p>${supported ? `<button class="button secondary" data-action="start" data-skill="${escapeHtml(row.skill_key)}">Assess ${escapeHtml(row.label)} →</button>` : '<p class="small muted">A diagnostic for this skill is not available yet.</p>'}`}</section></div><p class="match-guidance">${escapeHtml(row.guidance)}</p></article>`;
 }
 
 function comparisonMarkup() {
@@ -71,6 +74,7 @@ function comparisonMarkup() {
   return `<div class="page-intro result-heading"><div><span class="eyebrow">Saved job comparison</span><h1>${escapeHtml(saved.title)}</h1><p class="muted">${escapeHtml(dateLabel(saved.created_at))} · ${saved.mode === "semantic" ? "Keywords + semantic suggestions" : "Keyword baseline"}</p></div><button class="button secondary" data-action="new-match">New comparison</button></div>
     <section class="panel match-summary"><div><strong>${summary.explicit_skill_mentions}</strong><span>Named skill concepts</span></div><div><strong>${summary.explicit_mentions_with_claims}</strong><span>Named concepts with your claims</span></div><div><strong>${summary.semantic_suggestions}</strong><span>Suggested concepts to review</span></div><div><strong>${summary.skills_with_assessment_records}</strong><span>Concepts with an assessment record</span></div></section>
     <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>${escapeHtml(result.interpretation)}</p></div>
+    <section class="panel roadmap-entry"><div><h2>Added new assessment evidence?</h2><p class="muted">Save a new comparison using your latest records. This original snapshot stays unchanged.</p></div><button class="button secondary" data-action="repeat-comparison">Compare with latest evidence →</button></section>
     <div class="section-label"><h2>Skills and supporting records</h2>${canCompare ? `<button class="text-button" data-action="compare-${otherMode}">Try ${otherMode === "keyword" ? "keyword baseline" : "semantic suggestions"}</button>` : ""}</div>
     ${result.skills.length ? `<div class="match-skill-list">${result.skills.map(comparisonSkillMarkup).join("")}</div>` : '<div class="empty-state"><div><strong>No skill mappings found in this vocabulary</strong><p>The job may require skills outside the current scope. This does not mean you are unsuitable.</p></div></div>'}
     ${result.manual_review.length ? `<section class="panel match-review"><h2>Read these passages manually</h2><p class="small muted">These passages need context before their skills can be treated as candidate requirements.</p>${result.manual_review.map((item) => `<blockquote class="match-quote">${escapeHtml(item.text)}<footer>${escapeHtml(item.reason || "Review this passage before using it as a requirement.")}</footer></blockquote>`).join("")}</section>` : ""}
@@ -110,6 +114,10 @@ async function submitMatch(values) {
 }
 
 async function handleMatchAction(action, button) {
+  const requestedMode =
+    action === "repeat-comparison"
+      ? state.comparison.mode
+      : otherComparisonMode(action);
   if (action === "matches" || action === "new-match") {
     await loadMatches();
     state.evidenceEditor = null;
@@ -137,10 +145,7 @@ async function handleMatchAction(action, button) {
     state.matchDirty = true;
     return;
   } else if (state.comparison.job.source_type === "greenhouse") {
-    await openLiveJob(
-      state.comparison.job.live_job_id,
-      otherComparisonMode(action),
-    );
+    await openLiveJob(state.comparison.job.live_job_id, requestedMode);
     showNotice(
       "Review the current cached posting before comparing. A new comparison uses your current profile records.",
       true,
@@ -149,7 +154,7 @@ async function handleMatchAction(action, button) {
   } else {
     state.matchDraft = freshMatchDraft({
       ...state.comparison.job,
-      mode: action === "compare-keyword" ? "keyword" : "semantic",
+      mode: requestedMode,
     });
     state.matchDirty = true;
   }

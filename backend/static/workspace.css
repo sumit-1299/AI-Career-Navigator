@@ -1886,3 +1886,8 @@ dialog h2 {
     white-space: nowrap;
   }
 }
+
+/* Assessment choice and readable multi-line code questions. */
+.assessment-picker { flex-wrap: wrap; margin-bottom: 24px; }
+#question-prompt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-body strong { white-space: pre-wrap; }

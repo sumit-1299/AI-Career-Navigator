@@ -165,15 +165,17 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
             if relation["target"] == key:
                 related.extend({**claim, "skill_label": BY_KEY[relation["source"]]["label"], "relation": relation["relation"]}
                                for claim in support[relation["source"]])
-        assessment = snapshot["sql_assessment"] if key == "sql" else None
+        assessment = snapshot.get("assessments", {}).get(key)
+        if assessment is None and key == "sql":
+            assessment = snapshot.get("sql_assessment")
         if assessment and assessment["result"]["incorrect_count"]:
-            guidance = "Review the SQL topic results and practise the topics answered incorrectly. This small diagnostic does not establish overall proficiency."
+            guidance = f"Review the {skill['label']} topic results and practise the topics answered incorrectly. This small diagnostic does not establish overall proficiency."
         elif assessment and assessment["result"]["answered_count"] and assessment["result"]["unanswered_count"]:
-            guidance = "The answered SQL questions were correct, but some questions remain unassessed. Collect fresh evidence for those topics."
+            guidance = f"The answered {skill['label']} questions were correct, but some questions remain unassessed. Collect fresh evidence for those topics."
         elif assessment and assessment["result"]["answered_count"]:
-            guidance = "All questions in this SQL attempt were answered correctly. That describes this small diagnostic; use fresh practical tasks for broader evidence."
+            guidance = f"All questions in this {skill['label']} attempt were answered correctly. That describes this small diagnostic; use fresh practical tasks for broader evidence."
         elif assessment:
-            guidance = "The SQL attempt was entirely skipped. This skill remains unassessed; collect more evidence."
+            guidance = f"The {skill['label']} attempt was entirely skipped. This skill remains unassessed; collect more evidence."
         elif support[key]:
             guidance = "A candidate claim is recorded. Collect an independent assessment or review before treating proficiency as established."
         else:
@@ -185,6 +187,7 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
     direct_rows = [row for row in result_rows if row["mapping"] == "keyword"]
     return {"policy_version": POLICY_VERSION, "extraction_version": EXTRACTION_VERSION,
             "catalog_version": CATALOG_VERSION, "mode": mode,
+            "candidate_evidence_version": "latest-per-skill-v2",
             "model": {"id": MODEL_ID, "revision": MODEL_REVISION, "runtime": "onnx-cpu", "pooling": "attention-mask-mean-l2", "max_tokens": 256} if mode == "semantic" else None,
             "suggestion_policy": {"minimum_cosine": SIMILARITY_THRESHOLD, "minimum_margin": MARGIN_THRESHOLD,
                                   "validation_status": "heuristic_not_calibrated"} if mode == "semantic" else None,

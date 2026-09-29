@@ -7,6 +7,8 @@ Saved roadmaps contain snapshots so later edits do not rewrite past recommendati
 
 from copy import deepcopy
 
+from services.foundations_resources import CATALOGS
+
 
 CATALOG_VERSION = "sql-resources-2026-09-26-v1"
 POLICY_VERSION = "topic-evidence-rules-v1"
@@ -115,11 +117,22 @@ CATALOG = {
 }
 
 
-def build_roadmap(result, assessment_version, scoring_version):
+def build_roadmap(result, assessment_version, scoring_version, skill_key="sql"):
     """Derive suggestions from assessment evidence; never infer deficits from skips."""
+    if skill_key == "sql":
+        catalog, order, version = CATALOG, TOPIC_ORDER, CATALOG_VERSION
+        ordering = "Filtering, joins, then aggregation; topics with no flagged need are omitted."
+        evidence = "Keep your SQL queries, outputs and explanations for review. "
+    elif skill_key in CATALOGS:
+        config = CATALOGS[skill_key]
+        catalog, order, version = config["catalog"], tuple(config["catalog"]), config["version"]
+        ordering = config["ordering"]
+        evidence = "Keep your solutions, outputs and explanations for review. "
+    else:
+        raise ValueError("A resource catalogue is not available for this assessment skill.")
     topics = {topic["topic"]: topic for topic in result["topics"]}
     steps = []
-    for name in TOPIC_ORDER:
+    for name in order:
         topic = topics.get(name)
         if topic is None:
             continue
@@ -127,13 +140,14 @@ def build_roadmap(result, assessment_version, scoring_version):
         if not incorrect and not unanswered:
             continue
         kind = "practice" if incorrect else "collect_evidence"
+        topic_label = name.replace("_", " ")
         if incorrect:
-            reason = f"{incorrect} of {topic['answered_count']} answered questions in {name} were incorrect."
+            reason = f"{incorrect} of {topic['answered_count']} answered questions in {topic_label} were incorrect."
             if unanswered:
                 reason += f" {unanswered} question(s) also remain unassessed."
         else:
             reason = (
-                f"{unanswered} question(s) in {name} remain unassessed. "
+                f"{unanswered} question(s) in {topic_label} remain unassessed. "
                 "There is not enough evidence to infer a skill gap from those skips."
             )
         steps.append({
@@ -147,25 +161,25 @@ def build_roadmap(result, assessment_version, scoring_version):
             "source_counts": {key: topic[key] for key in (
                 "question_count", "answered_count", "correct_count", "incorrect_count", "unanswered_count"
             )},
-            **deepcopy(CATALOG[name]),
+            **deepcopy(catalog[name]),
         })
     return {
-        "catalog_version": CATALOG_VERSION, "policy_version": POLICY_VERSION,
+        "catalog_version": version, "policy_version": POLICY_VERSION,
         "source_assessment_version": assessment_version,
         "source_scoring_version": scoring_version,
         "content_review_status": "draft_pending_human_review",
-        "ordering": "Filtering, joins, then aggregation; topics with no flagged need are omitted.",
+        "ordering": ordering,
         "summary": {key: result[key] for key in (
             "question_count", "answered_count", "correct_count", "incorrect_count", "unanswered_count"
         )},
         "steps": steps,
-        "unmapped_topics": sorted(set(topics) - set(CATALOG)),
+        "unmapped_topics": sorted(set(topics) - set(catalog)),
         "progress_interpretation": (
             "Completion records self-reported learning activity only. It does not verify "
             "a skill, alter an assessment result, or establish a proficiency improvement."
         ),
         "next_evidence": (
-            "Keep your SQL queries, outputs and explanations for review. "
+            evidence +
             "Use new, independently reviewed tasks for reassessment; repeating the same "
             "multiple-choice questions does not independently measure learning gains."
         ),

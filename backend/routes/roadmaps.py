@@ -10,6 +10,7 @@ from models.assessment_attempt import utc_now
 from models.learning_roadmap import LearningRoadmap
 from routes.assessments import current_user_id, error, owned_attempt
 from services.learning_roadmap import build_roadmap
+from services.assessment_catalog import BANKS
 
 
 roadmaps_bp = Blueprint("roadmaps", __name__, url_prefix="/api/roadmaps")
@@ -39,13 +40,13 @@ def attempt_roadmap(attempt_id):
         return {"status": "success", "roadmap": roadmap.to_dict()}, 200
     if attempt.submitted_at is None or attempt.result is None:
         return error("Submit the assessment before creating a learning roadmap.", 409)
-    if attempt.skill_key != "sql":
+    if attempt.skill_key not in BANKS:
         return error("A resource catalogue is not available for this assessment skill.", 409)
     roadmap = LearningRoadmap(
         attempt_id=attempt.id, user_id=user_id,
         snapshot=build_roadmap(
             attempt.result, attempt.assessment_version,
-            attempt.question_snapshot["metadata"]["scoring_version"],
+            attempt.question_snapshot["metadata"]["scoring_version"], skill_key=attempt.skill_key,
         ), progress={},
     )
     try:

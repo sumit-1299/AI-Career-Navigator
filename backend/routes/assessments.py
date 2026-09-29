@@ -1,15 +1,17 @@
-"""Authenticated SQL assessment lifecycle, scoped to the current candidate."""
+"""Authenticated multi-skill assessment lifecycle, scoped to the current candidate."""
 
 from flask import Blueprint, current_app, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from extensions import db
 from models.assessment_attempt import AssessmentAttempt, utc_now
 from models.skill import Skill
 from models.user import User
-from services.sql_assessment import ASSESSMENT, QUESTIONS, grade_answers, new_snapshot
+from services.sql_assessment import grade_answers
+from services.assessment_catalog import BANKS, new_snapshot, public_description
+from services.skill_catalog import canonical_key
 
 
 assessments_bp = Blueprint("assessments", __name__, url_prefix="/api/assessments")
@@ -33,28 +35,41 @@ def owned_attempt(attempt_id, user_id):
     )).scalar_one_or_none()
 
 
-@assessments_bp.get("/sql")
+@assessments_bp.get("/catalog")
 @jwt_required()
-def sql_description():
+def catalog():
     if current_user_id() is None:
         return error("The candidate account is unavailable. Log in again.", 401)
-    return {"status": "success", "assessment": {**ASSESSMENT, "question_count": len(QUESTIONS)}}
+    return {"status": "success", "assessments": [public_description(key) for key in BANKS]}
 
 
-@assessments_bp.post("/sql/attempts")
+@assessments_bp.get("/<skill_key>")
 @jwt_required()
-def start_sql_attempt():
+def description(skill_key):
+    if current_user_id() is None:
+        return error("The candidate account is unavailable. Log in again.", 401)
+    if skill_key not in BANKS:
+        return error("Assessment skill not found.", 404)
+    return {"status": "success", "assessment": public_description(skill_key)}
+
+
+@assessments_bp.post("/<skill_key>/attempts")
+@jwt_required()
+def start_attempt(skill_key):
     user_id = current_user_id()
     if user_id is None:
         return error("The candidate account is unavailable. Log in again.", 401)
+    if skill_key not in BANKS:
+        return error("Assessment skill not found.", 404)
     if request.get_json(silent=True) != {}:
         return error("Send an empty JSON object {} to start an attempt.", 400)
-    claims = db.session.execute(select(Skill).where(
-        Skill.user_id == user_id, func.lower(func.trim(Skill.skill_name)) == "sql"
-    )).scalars().all()
+    claims = [claim for claim in db.session.execute(select(Skill).where(
+        Skill.user_id == user_id
+    ).order_by(Skill.id)).scalars().all() if canonical_key(claim.skill_name) == skill_key]
+    snapshot = new_snapshot(skill_key)
     attempt = AssessmentAttempt(
-        user_id=user_id, skill_key=ASSESSMENT["skill_key"],
-        assessment_version=ASSESSMENT["version"], question_snapshot=new_snapshot(),
+        user_id=user_id, skill_key=skill_key,
+        assessment_version=snapshot["metadata"]["version"], question_snapshot=snapshot,
         self_reported_claims=[
             {"skill_id": claim.id, "skill_name": claim.skill_name, "proficiency": claim.proficiency}
             for claim in claims
@@ -65,20 +80,26 @@ def start_sql_attempt():
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
-        current_app.logger.exception("Could not start SQL assessment")
+        current_app.logger.exception("Could not start assessment")
         return error("Could not save the assessment attempt.", 500)
     return {"status": "success", "attempt": attempt.to_dict()}, 201
 
 
-@assessments_bp.get("/sql/attempts")
+@assessments_bp.get("/attempts")
+@assessments_bp.get("/<skill_key>/attempts")
 @jwt_required()
-def list_sql_attempts():
+def list_attempts(skill_key=None):
     user_id = current_user_id()
     if user_id is None:
         return error("The candidate account is unavailable. Log in again.", 401)
-    attempts = db.session.execute(select(AssessmentAttempt).where(
-        AssessmentAttempt.user_id == user_id, AssessmentAttempt.skill_key == "sql"
-    ).order_by(AssessmentAttempt.created_at.desc(), AssessmentAttempt.id.desc()).limit(50)).scalars().all()
+    if skill_key is not None and skill_key not in BANKS:
+        return error("Assessment skill not found.", 404)
+    query = select(AssessmentAttempt).where(AssessmentAttempt.user_id == user_id)
+    if skill_key is not None:
+        query = query.where(AssessmentAttempt.skill_key == skill_key)
+    attempts = db.session.execute(query.order_by(
+        AssessmentAttempt.created_at.desc(), AssessmentAttempt.id.desc()
+    ).limit(50)).scalars().all()
     return {
         "status": "success", "limit": 50,
         "attempts": [attempt.to_dict(include_questions=False) for attempt in attempts],
@@ -128,6 +149,6 @@ def submit_attempt(attempt_id):
         db.session.refresh(attempt)
     except SQLAlchemyError:
         db.session.rollback()
-        current_app.logger.exception("Could not submit SQL assessment")
+        current_app.logger.exception("Could not submit assessment")
         return error("Could not save the assessment result.", 500)
     return {"status": "success", "attempt": attempt.to_dict()}

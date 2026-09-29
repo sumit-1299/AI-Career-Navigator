@@ -1,16 +1,16 @@
 # AI Career Navigator — implementation and research status
 
-Updated 28 September 2026. This file distinguishes working functionality from
+Updated 29 September 2026. This file distinguishes working functionality from
 planned research claims. See [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for the broader
 product vision; not every part of that vision is implemented.
 
 | Area | Current implementation | Remaining work / limits |
 | --- | --- | --- |
 | Local application | Flask, PostgreSQL, authentication and browser workspace | Deployment hardening and a hosted demo remain separate work |
-| SQL assessment | Six-question diagnostic, immutable attempts, accuracy/coverage and topic feedback | Draft content; independent content review and proficiency validation pending |
-| Learning roadmap | Curated SQL resources and practice steps linked to diagnostic results | Progress is self-reported; broader Python/REST assessment and roadmaps pending |
+| Skill assessments | SQL, Python and REST/HTTP six-question diagnostics, immutable attempts, accuracy/coverage and topic feedback | Draft content; independent review and proficiency validation pending; HTTP questions do not assess full REST design |
+| Learning roadmap | Curated SQL/Python/HTTP resources and original tasks linked to topic evidence; job cards lead to assessments and new comparisons | Progress is self-reported; tasks are ungraded and learning effectiveness is unvalidated |
 | Candidate evidence | Projects/certificates with skill tags, edits, version checks and archive/restore | Records remain unverified; no automatic credential verification |
-| Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions, with context review rules and HTTP/REST wording support | Rules and thresholds need independent validation; no overall hiring probability, suitability rank or proficiency score |
+| Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions; latest submitted SQL/Python/REST evidence per skill and context review | Rules and thresholds need independent validation; no overall hiring probability, suitability rank or proficiency score |
 | Live jobs | Selected Canonical/Razorpay boards, cached freshness, filtering and versioned comparison snapshots | Limited employer coverage, manual refresh, no market-wide feed |
 | Evaluation tools | Frozen job exporter, independent annotation page, adjudication, paired extraction metrics and a separate AI-draft development diagnostic | Human validation remains pending; agreement with an AI draft is preliminary and cannot establish accuracy |
 | Research contribution | Candidate evidence, uncertainty and source snapshots form the proposed approach | Literature gap/novelty and added decision value are not established by working features alone |
@@ -45,8 +45,11 @@ rerunning that importer. The current job comparison uses the explicit ten-concep
 catalogue in `backend/services/skill_catalog.py`; the earlier occupational datasets
 are not yet a fully integrated recommendation model or labelled training dataset.
 
+The next delivery sequence and study priorities are in [EXPERT_REVIEW_PLAN.md](EXPERT_REVIEW_PLAN.md).
+
 ## Relevant implementation notes
 
+- [MULTISKILL_ASSESSMENTS.md](MULTISKILL_ASSESSMENTS.md)
 - [SQL_ASSESSMENT.md](SQL_ASSESSMENT.md)
 - [ASSESSMENT_UI.md](ASSESSMENT_UI.md)
 - [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md)

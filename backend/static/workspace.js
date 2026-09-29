@@ -11,6 +11,9 @@ const state = {
   skills: [],
   history: [],
   metadata: null,
+  assessmentCatalog: [],
+  selectedSkill: "sql",
+  assessmentReturn: null,
   attempt: null,
   roadmap: null,
   evidence: [],
@@ -56,10 +59,17 @@ const dateLabel = (value) =>
     dateStyle: "medium",
     timeStyle: "short",
   });
-const sqlClaims = () =>
-  state.skills.filter(
-    (skill) => skill.skill_name.trim().toLowerCase() === "sql",
+const normaliseClaim = (value) =>
+  value.trim().toLowerCase().split(/\s+/).join(" ");
+const skillClaims = () => {
+  const aliases = state.metadata.claim_aliases.map(normaliseClaim);
+  return state.skills.filter((skill) =>
+    aliases.includes(normaliseClaim(skill.skill_name)),
   );
+};
+const skillLabel = (key) =>
+  state.assessmentCatalog.find((item) => item.skill_key === key)?.label || key;
+const topicLabel = (value) => value.replaceAll("_", " ");
 const brand = `<div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M7 24V8l18 16V8M7 8h7M18 24h7" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Career Navigator<small>ASSESS. REFLECT. GROW.</small></span></div>`;
 
 function showNotice(message, success = false) {
@@ -188,9 +198,9 @@ async function withBusy(button, action) {
 function renderAuth(email = "") {
   const registering = state.authMode === "register";
   root.innerHTML = `<div class="auth-layout">
-    <aside class="auth-story">${brand}<div><span class="eyebrow">Your next step starts with evidence</span><h1>Know where you are.<br>See what comes next.</h1><p class="intro">Explore your SQL knowledge, understand your results, and make your next practice session count.</p>
-      <div class="story-steps"><div class="story-detail"><span class="step-number">01</span><div><strong>Bring your perspective</strong><p class="muted">Record how you currently rate your SQL skill.</p></div></div><div class="story-detail"><span class="step-number">02</span><div><strong>Put it into practice</strong><p class="muted">Answer six questions across three SQL topics.</p></div></div><div class="story-detail"><span class="step-number">03</span><div><strong>Explore the evidence</strong><p class="muted">Review feedback and areas that need more practice or assessment.</p></div></div></div>
-    </div><p class="auth-footer">AI Career Navigator · Research prototype<br>Current module: SQL foundations diagnostic</p></aside>
+    <aside class="auth-story">${brand}<div><span class="eyebrow">Your next step starts with evidence</span><h1>Know where you are.<br>See what comes next.</h1><p class="intro">Explore your SQL, Python and HTTP API knowledge, understand your results, and make your next practice session count.</p>
+      <div class="story-steps"><div class="story-detail"><span class="step-number">01</span><div><strong>Bring your perspective</strong><p class="muted">Record how you currently rate a skill.</p></div></div><div class="story-detail"><span class="step-number">02</span><div><strong>Put it into practice</strong><p class="muted">Choose a skill and answer six foundation questions.</p></div></div><div class="story-detail"><span class="step-number">03</span><div><strong>Explore the evidence</strong><p class="muted">Review feedback and areas that need more practice or assessment.</p></div></div></div>
+    </div><p class="auth-footer">AI Career Navigator · Research prototype<br>SQL · Python · REST API HTTP foundations</p></aside>
     <main class="auth-main" id="main-content"><div class="auth-card"><span class="badge neutral">Candidate workspace</span><h2>${registering ? "Create your account" : "Welcome back"}</h2><p class="muted">${registering ? "Start your assessment journey." : "Sign in to your assessment workspace."}</p>
       <div class="tabs" aria-label="Account access"><button type="button" data-action="login-tab" class="${registering ? "" : "active"}" aria-pressed="${!registering}">Sign in</button><button type="button" data-action="register-tab" class="${registering ? "active" : ""}" aria-pressed="${registering}">Create account</button></div>
       <form id="auth-form">${registering ? '<label>Full name<input name="name" type="text" autocomplete="name" maxlength="120" required></label>' : ""}<label>Email<input name="email" type="email" autocomplete="username" value="${escapeHtml(email)}" required></label><label>Password<input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" ${registering ? 'minlength="8"' : ""} required></label>${registering ? '<p class="small muted">Use at least 8 characters.</p>' : ""}<button class="button primary" type="submit">${registering ? "Create account & continue" : "Sign in to workspace"} <span aria-hidden="true">→</span></button></form>
@@ -202,7 +212,7 @@ function renderShell() {
   const onEvidence = state.view === "evidence";
   const onMatches = state.view === "matches";
   const onJobs = state.view === "jobs";
-  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence || onMatches || onJobs ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence && !onMatches && !onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button><button class="nav-button ${onMatches ? "active" : ""}" data-action="matches" ${onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">⌕</span>Compare a job</button><button class="nav-button ${onJobs ? "active" : ""}" data-action="jobs" ${onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◎</span>Live jobs</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>SQL foundations v1<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onJobs ? "Live jobs" : onMatches ? "Job comparison" : onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "SQL foundations"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
+  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence || onMatches || onJobs ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence && !onMatches && !onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button><button class="nav-button ${onMatches ? "active" : ""}" data-action="matches" ${onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">⌕</span>Compare a job</button><button class="nav-button ${onJobs ? "active" : ""}" data-action="jobs" ${onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◎</span>Live jobs</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>Three foundation diagnostics<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onJobs ? "Live jobs" : onMatches ? "Job comparison" : onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "Assessments"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
   const main = document.querySelector("#main-content");
   if (state.view === "quiz") main.innerHTML = quizMarkup();
   else if (state.view === "results") main.innerHTML = resultsMarkup();
@@ -224,7 +234,7 @@ function evidenceMarkup() {
   );
   return `<div class="page-intro"><span class="eyebrow">Experience behind your skills</span><h1>My evidence</h1><p class="muted">Bring together projects you contributed to and certificates you earned. Explain what each item shows and which skills you used.</p></div>
     <section class="panel evidence-intro"><div><span class="badge neutral">Candidate-submitted · Unverified</span><h2>Your work, with context.</h2><p class="muted">A link gives someone a starting point for review. It does not verify ownership, certificate validity or skill proficiency.</p><div class="evidence-counts"><span><strong>${active.filter((item) => item.kind === "project").length}</strong> projects</span><span><strong>${active.filter((item) => item.kind === "certification").length}</strong> certifications</span></div></div><div class="evidence-add-actions"><button class="button primary" data-action="add-project">+ Add project</button><button class="button secondary" data-action="add-certification">+ Add certification</button></div></section>
-    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>Skill tags are your claims. Your SQL assessment results and learning activity stay separate. These submissions do not change your score or roadmap.</p></div>
+    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>Skill tags are your claims. Your assessment results and learning activity stay separate. These submissions do not change your score or roadmap.</p></div>
     <div class="section-label"><h2>${state.showArchived ? "Archived evidence" : "Submitted evidence"}</h2><button class="text-button" data-action="evidence-filter">${state.showArchived ? `Show active (${active.length})` : `Show archived (${archived})`}</button></div>
     ${items.length ? `<div class="evidence-grid">${items.map(evidenceCardMarkup).join("")}</div>` : `<div class="empty-state"><span class="empty-icon" aria-hidden="true">◇</span><div><strong>${state.showArchived ? "No archived evidence" : "Add your first piece of evidence"}</strong><p>${state.showArchived ? "Archived items can be restored whenever you need them." : "Start with a project where you can describe your own contribution."}</p></div></div>`}`;
 }
@@ -303,13 +313,18 @@ async function saveEvidence(values) {
 }
 
 function overviewMarkup() {
-  const claims = sqlClaims();
+  const meta = state.metadata;
+  const claims = skillClaims();
   const pending = state.history.find(
-    (attempt) => attempt.status === "in_progress",
+    (attempt) =>
+      attempt.skill_key === state.selectedSkill &&
+      attempt.status === "in_progress",
   );
-  return `<div class="page-intro"><span class="eyebrow">Your learning workspace</span><h1>Build a clearer picture of your skills.</h1><p class="muted">Start with SQL. Add your own perspective, take the diagnostic, and explore the evidence behind your next steps.</p></div><div class="overview-grid"><section class="panel assessment-card"><div class="button-row spread"><span class="badge">Available assessment</span><span class="small muted">Foundations · v1</span></div><h2>SQL foundations</h2><p class="muted">A short diagnostic covering how you filter, connect, and summarise data.</p><div class="topic-chips"><span>Filtering</span><span>Joins</span><span>Aggregation</span></div><div class="assessment-meta"><div><strong>${escapeHtml(state.metadata.question_count)}</strong><span>Questions</span></div><div><strong>3</strong><span>Topics</span></div><div><strong>Untimed</strong><span>Go at your pace</span></div></div><button class="button primary" data-action="${pending ? "open-attempt" : "start"}" ${pending ? `data-id="${escapeHtml(pending.id)}"` : ""}>${pending ? "Continue assessment" : "Start SQL assessment"} <span aria-hidden="true">→</span></button><p class="section-note">You may skip a question. It will remain unassessed.</p></section>
-    <section class="panel claim-panel"><span class="eyebrow">Your perspective</span><h2>Self-reported SQL skill</h2>${claims.length ? (claims.length === 1 ? `<div class="claim-value">${escapeHtml(claims[0].proficiency)}<small> / 10</small></div>` : `<ul class="claim-list">${claims.map((claim) => `<li>${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10</li>`).join("")}</ul>`) + '<p class="muted">This is your own rating. Assessment evidence is recorded separately.</p>' : '<p class="muted">Optional: how would you rate your current SQL skill?</p><form id="claim-form"><label>Rating from 1 to 10<input type="number" name="proficiency" min="1" max="10" step="1" placeholder="1–10" required></label><button class="button secondary" type="submit">Save my rating</button></form><p class="section-note">This is a self-report, not a verified score.</p>'}</section></div>
-    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>The question bank is a draft awaiting human review. Your result describes performance on this small set of questions, not overall SQL proficiency or job readiness.</p></div><section class="history-section"><div class="section-label"><h2>Recent assessments</h2><button class="text-button" data-action="history">View history <span aria-hidden="true">→</span></button></div>${historyMarkup(state.history.slice(0, 3))}</section>`;
+  return `<div class="page-intro"><span class="eyebrow">Your learning workspace</span><h1>Build a clearer picture of your skills.</h1><p class="muted">Choose a skill, add your perspective, and use assessment evidence to plan your next steps.</p></div>
+    <div class="tabs assessment-picker" role="group" aria-label="Choose assessment skill">${state.assessmentCatalog.map((item) => `<button type="button" data-action="select-assessment" data-skill="${escapeHtml(item.skill_key)}" class="${state.selectedSkill === item.skill_key ? "active" : ""}" aria-pressed="${state.selectedSkill === item.skill_key}">${escapeHtml(item.label)}</button>`).join("")}</div>
+    <div class="overview-grid"><section class="panel assessment-card"><div class="button-row spread"><span class="badge">Available assessment</span><span class="small muted">Foundations · v1</span></div><h2>${escapeHtml(meta.title)}</h2><p class="muted">A short diagnostic sampling the topics below. Use it to identify what to practise or assess next.</p><div class="topic-chips">${meta.topics.map((topic) => `<span>${escapeHtml(topicLabel(topic))}</span>`).join("")}</div><div class="assessment-meta"><div><strong>${meta.question_count}</strong><span>Questions</span></div><div><strong>${meta.topics.length}</strong><span>Topics</span></div><div><strong>Untimed</strong><span>Go at your pace</span></div></div><button class="button primary" data-action="${pending ? "open-attempt" : "start"}" data-skill="${escapeHtml(meta.skill_key)}" ${pending ? `data-id="${escapeHtml(pending.id)}"` : ""}>${pending ? "Continue assessment" : `Start ${escapeHtml(meta.label)} assessment`} <span aria-hidden="true">→</span></button><p class="section-note">You may skip a question. It will remain unassessed.</p></section>
+    <section class="panel claim-panel"><span class="eyebrow">Your perspective</span><h2>Self-reported ${escapeHtml(meta.label)} skill</h2>${claims.length ? (claims.length === 1 ? `<div class="claim-value">${escapeHtml(claims[0].proficiency)}<small> / 10</small></div>` : `<ul class="claim-list">${claims.map((claim) => `<li>${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10</li>`).join("")}</ul>`) + '<p class="muted">This is your own rating. Assessment evidence is recorded separately.</p>' : '<p class="muted">Optional: how would you rate your current skill?</p><form id="claim-form"><label>Rating from 1 to 10<input type="number" name="proficiency" min="1" max="10" step="1" placeholder="1–10" required></label><button class="button secondary" type="submit">Save my rating</button></form><p class="section-note">This is a self-report, not a verified score.</p>'}</section></div>
+    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>The question banks await human review. Results describe these questions, not overall proficiency or job readiness. The REST API diagnostic samples HTTP foundations only.</p></div><section class="history-section"><div class="section-label"><h2>Recent assessments</h2><button class="text-button" data-action="history">View history →</button></div>${historyMarkup(state.history.slice(0, 3))}</section>`;
 }
 
 function historyMarkup(attempts) {
@@ -318,7 +333,7 @@ function historyMarkup(attempts) {
   return `<div class="history-list">${attempts
     .map((attempt) => {
       const done = attempt.status === "submitted";
-      return `<article class="history-row"><div><h3>SQL foundations <span class="badge ${done ? "green" : "neutral"}">${done ? "Submitted" : "In progress"}</span></h3><p>${escapeHtml(dateLabel(attempt.submitted_at || attempt.created_at))}</p></div><div class="history-right">${done ? `<div class="history-score">${escapeHtml(percent(attempt.result.accuracy_on_answered_percent))}<small>${attempt.result.answered_count}/${attempt.result.question_count} answered</small></div>` : '<span class="small muted">Not submitted</span>'}<button class="button secondary" data-action="open-attempt" data-id="${escapeHtml(attempt.id)}">${done ? "View result" : "Continue"}</button></div></article>`;
+      return `<article class="history-row"><div><h3>${escapeHtml(attempt.assessment.title)} <span class="badge ${done ? "green" : "neutral"}">${done ? "Submitted" : "In progress"}</span></h3><p>${escapeHtml(dateLabel(attempt.submitted_at || attempt.created_at))}</p></div><div class="history-right">${done ? `<div class="history-score">${escapeHtml(percent(attempt.result.accuracy_on_answered_percent))}<small>${attempt.result.answered_count}/${attempt.result.question_count} answered</small></div>` : '<span class="small muted">Not submitted</span>'}<button class="button secondary" data-action="open-attempt" data-id="${escapeHtml(attempt.id)}">${done ? "View result" : "Continue"}</button></div></article>`;
     })
     .join("")}</div>`;
 }
@@ -334,7 +349,7 @@ function quizMarkup() {
   const question = questions[state.index];
   const answers = answersFor(attempt);
   const count = questions.filter((item) => answers[item.id]).length;
-  return `<div class="page-intro"><span class="eyebrow">SQL foundations diagnostic</span><h1>One question. One piece of evidence.</h1><p class="muted">Choose the best answer, or leave a question unassessed. You can revisit any question before submitting.</p></div><div class="quiz-grid"><section class="panel question-panel"><div class="question-top"><span class="badge">${escapeHtml(question.topic)}</span><span class="question-count">Question ${state.index + 1} of ${questions.length}</span></div><fieldset><legend id="question-prompt">${escapeHtml(question.prompt)}</legend>${Object.entries(
+  return `<div class="page-intro"><span class="eyebrow">${escapeHtml(attempt.assessment.title)}</span><h1>One question. One piece of evidence.</h1><p class="muted">Choose the best answer, or leave a question unassessed. You can revisit any question before submitting.</p></div><div class="quiz-grid"><section class="panel question-panel"><div class="question-top"><span class="badge">${escapeHtml(topicLabel(question.topic))}</span><span class="question-count">Question ${state.index + 1} of ${questions.length}</span></div><fieldset><legend id="question-prompt">${escapeHtml(question.prompt)}</legend>${Object.entries(
     question.options,
   )
     .map(
@@ -380,9 +395,9 @@ function resultsMarkup() {
   const suggested = result.topics.filter(
     (topic) => topic.practice_suggested || topic.additional_evidence_needed,
   );
-  return `<div class="page-intro result-heading"><div><span class="badge green">Result saved</span><h1>Your SQL assessment evidence</h1><p class="muted">${escapeHtml(dateLabel(attempt.submitted_at))} · SQL foundations</p></div><button class="button secondary" data-action="history">View history</button></div><div class="metrics"><div class="metric primary-metric"><span class="metric-label">Accuracy on answered questions</span><strong>${escapeHtml(percent(result.accuracy_on_answered_percent))}</strong><small>${result.correct_count} correct out of ${result.answered_count} answered</small></div><div class="metric"><span class="metric-label">Assessment coverage</span><strong>${escapeHtml(percent(result.coverage_percent))}</strong><small>${result.answered_count} of ${result.question_count} questions answered</small></div><div class="metric"><span class="metric-label">Incorrect answers</span><strong>${result.incorrect_count}</strong><small>Evidence to guide further practice</small></div><div class="metric"><span class="metric-label">Unassessed questions</span><strong>${result.unanswered_count}</strong><small>Skipped questions need more evidence</small></div></div>
-    <div class="result-grid"><section class="panel"><div class="section-label"><h2>Evidence by topic</h2><span class="small muted">${result.topics.length} topics</span></div>${result.topics.map((topic) => `<div class="topic-row"><div class="topic-title"><h3>${escapeHtml(topic.topic)}</h3><div>${topicStatus(topic)}</div></div><p>${topic.correct_count} correct · ${topic.incorrect_count} incorrect · ${topic.unanswered_count} unassessed</p></div>`).join("")}</section><aside class="panel"><span class="eyebrow">Make your next step count</span><h2>Where to focus</h2>${suggested.length ? suggested.map((topic) => `<div class="next-action"><strong>${escapeHtml(topic.topic)}</strong><p>${topic.practice_suggested ? "Review the explanations and practise the concepts you missed." : "Answer fresh questions to collect evidence for this topic."}${topic.additional_evidence_needed && topic.practice_suggested ? " Some questions also remain unassessed." : ""}</p></div>`).join("") : '<p class="muted small">You answered this question set correctly. A fresh practical task would provide additional evidence.</p>'}<div class="snapshot"><strong>Self-report when this attempt started</strong><p class="muted">${attempt.self_reported_claims.length ? attempt.self_reported_claims.map((claim) => `${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10`).join(" · ") : "No SQL self-rating recorded."}</p><p class="muted">Self-report and assessment results are separate evidence.</p></div></aside></div>
-    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>${escapeHtml(attempt.assessment.interpretation)}</p></div>${roadmapEntryMarkup()}<section class="review-list"><div class="section-label"><h2>Review your answers</h2><span class="small muted">Open a question for feedback</span></div>${result.feedback
+  return `<div class="page-intro result-heading"><div><span class="badge green">Result saved</span><h1>Your ${escapeHtml(skillLabel(attempt.skill_key))} assessment evidence</h1><p class="muted">${escapeHtml(dateLabel(attempt.submitted_at))} · ${escapeHtml(attempt.assessment.title)}</p></div><button class="button secondary" data-action="history">View history</button></div><div class="metrics"><div class="metric primary-metric"><span class="metric-label">Accuracy on answered questions</span><strong>${escapeHtml(percent(result.accuracy_on_answered_percent))}</strong><small>${result.correct_count} correct out of ${result.answered_count} answered</small></div><div class="metric"><span class="metric-label">Assessment coverage</span><strong>${escapeHtml(percent(result.coverage_percent))}</strong><small>${result.answered_count} of ${result.question_count} questions answered</small></div><div class="metric"><span class="metric-label">Incorrect answers</span><strong>${result.incorrect_count}</strong><small>Evidence to guide further practice</small></div><div class="metric"><span class="metric-label">Unassessed questions</span><strong>${result.unanswered_count}</strong><small>Skipped questions need more evidence</small></div></div>
+    <div class="result-grid"><section class="panel"><div class="section-label"><h2>Evidence by topic</h2><span class="small muted">${result.topics.length} topics</span></div>${result.topics.map((topic) => `<div class="topic-row"><div class="topic-title"><h3>${escapeHtml(topicLabel(topic.topic))}</h3><div>${topicStatus(topic)}</div></div><p>${topic.correct_count} correct · ${topic.incorrect_count} incorrect · ${topic.unanswered_count} unassessed</p></div>`).join("")}</section><aside class="panel"><span class="eyebrow">Make your next step count</span><h2>Where to focus</h2>${suggested.length ? suggested.map((topic) => `<div class="next-action"><strong>${escapeHtml(topicLabel(topic.topic))}</strong><p>${topic.practice_suggested ? "Review the explanations and practise the concepts you missed." : "Answer fresh questions to collect evidence for this topic."}${topic.additional_evidence_needed && topic.practice_suggested ? " Some questions also remain unassessed." : ""}</p></div>`).join("") : '<p class="muted small">You answered this question set correctly. A fresh practical task would provide additional evidence.</p>'}<div class="snapshot"><strong>Self-report when this attempt started</strong><p class="muted">${attempt.self_reported_claims.length ? attempt.self_reported_claims.map((claim) => `${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10`).join(" · ") : "No self-rating recorded for this skill."}</p><p class="muted">Self-report and assessment results are separate evidence.</p></div></aside></div>
+    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>${escapeHtml(attempt.assessment.interpretation)}</p></div>${assessmentReturnMarkup()}${roadmapEntryMarkup()}<section class="review-list"><div class="section-label"><h2>Review your answers</h2><span class="small muted">Open a question for feedback</span></div>${result.feedback
       .map((feedback, index) => {
         const question = attempt.questions.find(
           (item) => item.id === feedback.question_id,
@@ -395,7 +410,7 @@ function resultsMarkup() {
               ? "Incorrect"
               : "Unassessed";
         const chosen = feedback.selected_option_id;
-        return `<details class="review-item"><summary>Question ${index + 1} · ${escapeHtml(question.topic)} <span class="badge ${outcome === "correct" ? "green" : outcome === "incorrect" ? "red" : "neutral"}">${label}</span></summary><div class="review-body"><p><strong>${escapeHtml(question.prompt)}</strong></p><p>Your answer: ${chosen === null ? "Skipped — unassessed" : `${escapeHtml(chosen.toUpperCase())}. ${escapeHtml(question.options[chosen])}`}</p><p>Correct answer: ${escapeHtml(feedback.correct_option_id.toUpperCase())}. ${escapeHtml(question.options[feedback.correct_option_id])}</p><p class="muted">${escapeHtml(feedback.explanation)}</p></div></details>`;
+        return `<details class="review-item"><summary>Question ${index + 1} · ${escapeHtml(topicLabel(question.topic))} <span class="badge ${outcome === "correct" ? "green" : outcome === "incorrect" ? "red" : "neutral"}">${label}</span></summary><div class="review-body"><p><strong>${escapeHtml(question.prompt)}</strong></p><p>Your answer: ${chosen === null ? "Skipped — unassessed" : `${escapeHtml(chosen.toUpperCase())}. ${escapeHtml(question.options[chosen])}`}</p><p>Correct answer: ${escapeHtml(feedback.correct_option_id.toUpperCase())}. ${escapeHtml(question.options[feedback.correct_option_id])}</p><p class="muted">${escapeHtml(feedback.explanation)}</p></div></details>`;
       })
       .join(
         "",
@@ -412,19 +427,26 @@ function resourceMarkup(resource) {
     const url = new URL(resource.url);
     allowed =
       url.protocol === "https:" &&
-      ["cs50.harvard.edu", "www.postgresql.org"].includes(url.hostname);
+      !url.username &&
+      !url.password &&
+      [
+        "cs50.harvard.edu",
+        "www.postgresql.org",
+        "docs.python.org",
+        "developer.mozilla.org",
+      ].includes(url.hostname);
   } catch {
     /* Show the title without a link if a saved URL is invalid. */
   }
-  return `<li class="roadmap-resource"><span class="resource-kind">${resource.kind === "course_lesson" ? "Course lesson" : "Reference"} · ${escapeHtml(resource.provider)}</span>${allowed ? `<a href="${escapeHtml(resource.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(resource.title)} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>` : `<strong>${escapeHtml(resource.title)} — link unavailable</strong>`}<p>${escapeHtml(resource.focus)}</p><span class="resource-date">Link checked ${escapeHtml(resource.checked_on)}</span></li>`;
+  return `<li class="roadmap-resource"><span class="resource-kind">${resource.kind === "course_lesson" ? "Course lesson" : resource.kind === "guided_lesson" ? "Guided lesson" : "Reference"} · ${escapeHtml(resource.provider)}</span>${allowed ? `<a href="${escapeHtml(resource.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(resource.title)} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>` : `<strong>${escapeHtml(resource.title)} — link unavailable</strong>`}<p>${escapeHtml(resource.focus)}</p><span class="resource-date">Link checked ${escapeHtml(resource.checked_on)}</span></li>`;
 }
 
 function roadmapMarkup() {
   const roadmap = state.roadmap;
   const snapshot = roadmap.snapshot;
   const unmapped = snapshot.unmapped_topics.length > 0;
-  return `<div class="page-intro result-heading"><div><span class="eyebrow">From evidence to action</span><h1>Your SQL learning roadmap</h1><p class="muted">Based on your assessment from ${escapeHtml(dateLabel(state.attempt.submitted_at))}. Follow the steps that fit the evidence from this attempt.</p></div><button class="button secondary" data-action="back-to-result">Back to result</button></div>
-    <section class="panel roadmap-summary"><div><span class="badge">Saved learning plan</span><h2>${roadmap.step_count} ${roadmap.step_count === 1 ? "focused step" : "focused steps"}</h2><p class="muted">${roadmap.step_count ? "Work through the suggested order. Your progress is saved to this account." : "Your plan reflects this assessment only; broader SQL skills need additional evidence."}</p></div>${roadmap.step_count ? `<div class="roadmap-progress"><strong id="roadmap-progress-label">${roadmap.completed_count} of ${roadmap.step_count} practice activities marked complete</strong><progress id="roadmap-progress" value="${roadmap.completed_count}" max="${roadmap.step_count}" aria-labelledby="roadmap-progress-label"></progress><p class="muted">Self-reported activity. Your assessment score stays unchanged.</p></div>` : ""}</section>
+  return `<div class="page-intro result-heading"><div><span class="eyebrow">From evidence to action</span><h1>Your ${escapeHtml(skillLabel(state.attempt.skill_key))} learning roadmap</h1><p class="muted">Based on your assessment from ${escapeHtml(dateLabel(state.attempt.submitted_at))}. Follow the steps that fit the evidence from this attempt.</p></div><button class="button secondary" data-action="back-to-result">Back to result</button></div>
+    <section class="panel roadmap-summary"><div><span class="badge">Saved learning plan</span><h2>${roadmap.step_count} ${roadmap.step_count === 1 ? "focused step" : "focused steps"}</h2><p class="muted">${roadmap.step_count ? "Work through the suggested order. Your progress is saved to this account." : "Your plan reflects this assessment only; broader skills need additional evidence."}</p></div>${roadmap.step_count ? `<div class="roadmap-progress"><strong id="roadmap-progress-label">${roadmap.completed_count} of ${roadmap.step_count} practice activities marked complete</strong><progress id="roadmap-progress" value="${roadmap.completed_count}" max="${roadmap.step_count}" aria-labelledby="roadmap-progress-label"></progress><p class="muted">Self-reported activity. Your assessment score stays unchanged.</p></div>` : ""}</section>
     <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>Wrong answers can suggest practice. Unanswered questions call for more evidence; resources for those topics are optional support.</p></div>
     ${unmapped ? `<div class="info-line"><p>Resource mapping is not yet available for: ${snapshot.unmapped_topics.map(escapeHtml).join(", ")}. These topics need separate review.</p></div>` : ""}
     <div class="roadmap-steps">${
@@ -433,12 +455,28 @@ function roadmapMarkup() {
             .map((step) => {
               const done =
                 roadmap.self_reported_progress[step.id]?.completed === true;
-              return `<article class="panel roadmap-step" data-step="${escapeHtml(step.id)}"><div class="roadmap-step-heading"><span class="roadmap-step-number">${step.position}</span><div><span class="eyebrow">${escapeHtml(step.topic)}</span><h2>${escapeHtml(step.title)}</h2></div><span class="badge ${step.kind === "practice" ? "amber" : "neutral"}">${step.kind === "practice" ? "Practice suggested" : "More evidence needed"}</span></div><p class="roadmap-reason"><strong>Why this step:</strong> ${escapeHtml(step.reason)}</p><p class="muted small">${escapeHtml(step.objective)}</p><div class="roadmap-columns"><section><h3>Learning resources</h3><p class="small muted">${escapeHtml(step.resource_guidance)}</p><ul class="roadmap-resource-list">${step.resources.map(resourceMarkup).join("")}</ul></section><section class="roadmap-practice"><span class="badge neutral">Original practice task</span><h3>${escapeHtml(step.task.title)}</h3><ol>${step.task.instructions.map((instruction) => `<li>${escapeHtml(instruction)}</li>`).join("")}</ol><details><summary>Show practice data (SQL)</summary><p class="small muted">Use this starter in your SQL editor and add your query. It uses temporary query data and does not create tables.</p><pre><code>${escapeHtml(step.task.starter_sql)}</code></pre></details><details><summary>Self-check after trying</summary><p>${escapeHtml(step.task.self_check)}</p><p class="muted small">Keep your query, output and explanation for review. This task is not automatically graded.</p></details></section></div><div class="roadmap-activity"><div><span class="badge ${done ? "green" : "neutral"} roadmap-activity-status">${done ? "Marked complete · self-reported" : "Not marked complete"}</span><p class="small muted">Mark this only after attempting the task. This records activity, not verified skill.</p></div><button class="button secondary roadmap-toggle" data-action="roadmap-progress" data-step="${escapeHtml(step.id)}" aria-label="Mark ${escapeHtml(step.topic)} practice ${done ? "as not done" : "complete"}">${done ? "Mark as not done" : "Mark practice complete"}</button></div></article>`;
+              return `<article class="panel roadmap-step" data-step="${escapeHtml(step.id)}"><div class="roadmap-step-heading"><span class="roadmap-step-number">${step.position}</span><div><span class="eyebrow">${escapeHtml(topicLabel(step.topic))}</span><h2>${escapeHtml(step.title)}</h2></div><span class="badge ${step.kind === "practice" ? "amber" : "neutral"}">${step.kind === "practice" ? "Practice suggested" : "More evidence needed"}</span></div><p class="roadmap-reason"><strong>Why this step:</strong> ${escapeHtml(step.reason)}</p><p class="muted small">${escapeHtml(step.objective)}</p><div class="roadmap-columns"><section><h3>Learning resources</h3><p class="small muted">${escapeHtml(step.resource_guidance)}</p><ul class="roadmap-resource-list">${step.resources.map(resourceMarkup).join("")}</ul></section><section class="roadmap-practice"><span class="badge neutral">Original practice task</span><h3>${escapeHtml(step.task.title)}</h3><ol>${step.task.instructions.map((instruction) => `<li>${escapeHtml(instruction)}</li>`).join("")}</ol>${practiceStarterMarkup(step.task)}<details><summary>Self-check after trying</summary><p>${escapeHtml(step.task.self_check)}</p><p class="muted small">Keep your solution, output and explanation for review. This task is not automatically graded.</p></details></section></div><div class="roadmap-activity"><div><span class="badge ${done ? "green" : "neutral"} roadmap-activity-status">${done ? "Marked complete · self-reported" : "Not marked complete"}</span><p class="small muted">Mark this only after attempting the task. This records activity, not verified skill.</p></div><button class="button secondary roadmap-toggle" data-action="roadmap-progress" data-step="${escapeHtml(step.id)}" aria-label="Mark ${escapeHtml(topicLabel(step.topic))} practice ${done ? "as not done" : "complete"}">${done ? "Mark as not done" : "Mark practice complete"}</button></div></article>`;
             })
             .join("")
         : `<section class="panel"><h2>${unmapped ? "No mapped steps are available" : "No targeted practice suggested by this attempt"}</h2><p class="muted">${unmapped ? "Review the unmapped topics before drawing a conclusion." : "You answered the assessed topics correctly. A fresh practical evaluation would provide evidence beyond these multiple-choice questions."}</p></section>`
     }</div>
-    <section class="panel roadmap-next"><span class="eyebrow">After practising</span><h2>Gather fresh evidence</h2><p class="muted">${escapeHtml(snapshot.next_evidence)}</p><p class="small muted">${escapeHtml(snapshot.progress_interpretation)}</p></section><details class="roadmap-method"><summary>How this roadmap was chosen</summary><p>Suggestions follow topic rules applied to this saved assessment. They are a baseline for the research project, not a trained recommendation model.</p><p>${escapeHtml(snapshot.ordering)} Tasks await human review. Link checks confirm resource availability and topic relevance, not learning effectiveness.</p><p class="small">Created ${escapeHtml(dateLabel(roadmap.created_at))}<br>Policy: ${escapeHtml(snapshot.policy_version)} · Catalogue: ${escapeHtml(snapshot.catalog_version)}<br>Assessment: ${escapeHtml(snapshot.source_assessment_version)}</p></details>`;
+    ${assessmentReturnMarkup()}<section class="panel roadmap-next"><span class="eyebrow">After practising</span><h2>Gather fresh evidence</h2><p class="muted">${escapeHtml(snapshot.next_evidence)}</p><p class="small muted">${escapeHtml(snapshot.progress_interpretation)}</p></section><details class="roadmap-method"><summary>How this roadmap was chosen</summary><p>Suggestions follow topic rules applied to this saved assessment. They are a baseline for the research project, not a trained recommendation model.</p><p>${escapeHtml(snapshot.ordering)} Tasks await human review. Link checks confirm resource availability and topic relevance, not learning effectiveness.</p><p class="small">Created ${escapeHtml(dateLabel(roadmap.created_at))}<br>Policy: ${escapeHtml(snapshot.policy_version)} · Catalogue: ${escapeHtml(snapshot.catalog_version)}<br>Assessment: ${escapeHtml(snapshot.source_assessment_version)}</p></details>`;
+}
+
+function practiceStarterMarkup(task) {
+  const legacySQL = typeof task.starter_sql === "string";
+  const code = legacySQL ? task.starter_sql : task.starter_code;
+  if (typeof code !== "string") return "";
+  const language = legacySQL ? "SQL" : task.language;
+  const guidance = legacySQL
+    ? "Use this starter in your SQL editor and add your query. It uses temporary query data and does not create tables."
+    : task.starter_guidance;
+  return `<details><summary>Show practice starter (${escapeHtml(language)})</summary><p class="small muted">${escapeHtml(guidance)}</p><pre><code>${escapeHtml(code)}</code></pre></details>`;
+}
+
+function assessmentReturnMarkup() {
+  if (!state.assessmentReturn) return "";
+  return `<section class="panel roadmap-entry"><div><h2>Return to your job comparison</h2><p class="muted">The saved comparison keeps its original evidence. Open it, then choose “Compare with latest evidence” to save a new comparison.</p></div><button class="button secondary" data-action="return-to-comparison">Back to saved comparison →</button></section>`;
 }
 
 function syncRoadmapProgress() {
@@ -466,10 +504,15 @@ function syncRoadmapProgress() {
 async function loadWorkspace() {
   // Sequential requests avoid several session-expiry dialogs opening together.
   const skills = await request("/api/skills");
-  const metadata = await request("/api/assessments/sql");
-  const history = await request("/api/assessments/sql/attempts");
+  const metadata = await request("/api/assessments/catalog");
+  const history = await request("/api/assessments/attempts");
   state.skills = skills.skills;
-  state.metadata = metadata.assessment;
+  state.assessmentCatalog = metadata.assessments;
+  state.metadata =
+    state.assessmentCatalog.find(
+      (item) => item.skill_key === state.selectedSkill,
+    ) || state.assessmentCatalog[0];
+  state.selectedSkill = state.metadata.skill_key;
   state.history = history.attempts;
 }
 
@@ -478,6 +521,10 @@ async function openAttempt(id) {
     `/api/assessments/attempts/${encodeURIComponent(id)}`,
   );
   state.attempt = data.attempt;
+  state.selectedSkill = data.attempt.skill_key;
+  state.metadata = state.assessmentCatalog.find(
+    (item) => item.skill_key === state.selectedSkill,
+  );
   state.roadmap = null;
   state.view = data.attempt.status === "submitted" ? "results" : "quiz";
   state.index = 0;
@@ -583,12 +630,12 @@ root.addEventListener("submit", (event) => {
         throw new Error("Choose a whole-number rating from 1 to 10.");
       const data = await request("/api/skills", {
         method: "POST",
-        body: { skill_name: "SQL", proficiency },
+        body: { skill_name: state.metadata.label, proficiency },
       });
       state.skills.push(data.skill);
       renderShell();
       showNotice(
-        "Self-reported SQL rating saved. New attempts will record this claim separately from their results.",
+        "Self-reported rating saved. New attempts will record this claim separately from their results.",
         true,
       );
     }
@@ -658,6 +705,9 @@ root.addEventListener("click", (event) => {
     state.skills = [];
     state.history = [];
     state.metadata = null;
+    state.assessmentCatalog = [];
+    state.selectedSkill = "sql";
+    state.assessmentReturn = null;
     state.attempt = null;
     state.roadmap = null;
     state.evidence = [];
@@ -703,7 +753,20 @@ root.addEventListener("click", (event) => {
     return;
   }
   void withBusy(button, async () => {
-    if (action === "overview" || action === "history") {
+    if (action === "return-to-comparison") {
+      state.comparison = state.assessmentReturn;
+      clearMatchDraft();
+      state.view = "matches";
+      renderShell();
+      focusContent();
+    } else if (action === "select-assessment") {
+      state.selectedSkill = button.dataset.skill;
+      state.metadata = state.assessmentCatalog.find(
+        (item) => item.skill_key === state.selectedSkill,
+      );
+      renderShell();
+    } else if (action === "overview" || action === "history") {
+      state.assessmentReturn = null;
       await loadWorkspace();
       clearMatchDraft();
       state.evidenceEditor = null;
@@ -727,6 +790,7 @@ root.addEventListener("click", (event) => {
         "demo-match",
         "compare-keyword",
         "compare-semantic",
+        "repeat-comparison",
       ].includes(action)
     ) {
       await handleMatchAction(action, button);
@@ -776,17 +840,32 @@ root.addEventListener("click", (event) => {
         true,
       );
     } else if (action === "start") {
-      const data = await request("/api/assessments/sql/attempts", {
-        method: "POST",
-        body: {},
-      });
-      state.history.unshift(data.attempt);
-      state.attempt = data.attempt;
-      state.index = 0;
-      state.view = "quiz";
-      renderShell();
-      focusContent();
+      state.assessmentReturn =
+        state.view === "matches" ? state.comparison : null;
+      const key = button.dataset.skill || state.selectedSkill;
+      // Reuse an unfinished attempt for this skill, including from a job card.
+      const history = await request(
+        `/api/assessments/${encodeURIComponent(key)}/attempts`,
+      );
+      let attempt = history.attempts.find(
+        (item) => item.status === "in_progress",
+      );
+      if (!attempt) {
+        attempt = (
+          await request(
+            `/api/assessments/${encodeURIComponent(key)}/attempts`,
+            { method: "POST", body: {} },
+          )
+        ).attempt;
+      }
+      state.history = [
+        attempt,
+        ...state.history.filter((item) => item.id !== attempt.id),
+      ].slice(0, 50);
+      await openAttempt(attempt.id);
     } else if (action === "open-attempt") {
+      state.assessmentReturn =
+        state.view === "matches" ? state.comparison : null;
       await openAttempt(button.dataset.id);
     } else if (action === "open-roadmap") {
       const data = await request(`/api/roadmaps/attempts/${state.attempt.id}`, {

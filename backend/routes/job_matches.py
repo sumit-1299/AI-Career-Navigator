@@ -12,6 +12,7 @@ from models.candidate_evidence import CandidateEvidence
 from models.job_comparison import JobComparison
 from models.skill import Skill
 from routes.assessments import current_user_id, error
+from services.assessment_catalog import BANKS
 from services.candidate_evidence import source_url, submission_id, text_field
 from services.job_matching import build_comparison
 from services.semantic_encoder import SemanticUnavailable, model_status
@@ -39,17 +40,26 @@ def candidate_snapshot(user_id):
     skills = db.session.execute(select(Skill).where(Skill.user_id == user_id).order_by(Skill.id)).scalars().all()
     evidence = db.session.execute(select(CandidateEvidence).where(CandidateEvidence.user_id == user_id,
                                   CandidateEvidence.archived.is_(False)).order_by(CandidateEvidence.id)).scalars().all()
-    # Latest submitted attempt, not the best score. An all-skipped latest attempt stays unassessed.
-    attempt = db.session.execute(select(AssessmentAttempt).where(AssessmentAttempt.user_id == user_id,
-                                 AssessmentAttempt.skill_key == "sql", AssessmentAttempt.submitted_at.is_not(None))
-                                 .order_by(AssessmentAttempt.submitted_at.desc(), AssessmentAttempt.id.desc()).limit(1)).scalar_one_or_none()
-    assessed = None
-    if attempt:
-        assessed = {"attempt_id": attempt.id, "assessment_version": attempt.assessment_version,
-                    "submitted_at": iso_utc(attempt.submitted_at), "result": deepcopy(attempt.result)}
-    return {"captured_at": iso_utc(utc_now()),
+    # Latest submitted attempt for each supported skill, never the best score.
+    # An all-skipped latest attempt must not fall back to a previous high score.
+    assessments = {}
+    for skill_key in BANKS:
+        attempt = db.session.execute(select(AssessmentAttempt).where(
+            AssessmentAttempt.user_id == user_id, AssessmentAttempt.skill_key == skill_key,
+            AssessmentAttempt.submitted_at.is_not(None)
+        ).order_by(AssessmentAttempt.submitted_at.desc(), AssessmentAttempt.id.desc()).limit(1)).scalar_one_or_none()
+        if attempt:
+            assessments[skill_key] = {
+                "attempt_id": attempt.id, "skill_key": skill_key,
+                "assessment_version": attempt.assessment_version,
+                "title": attempt.question_snapshot["metadata"]["title"],
+                "review_status": attempt.question_snapshot["metadata"]["review_status"],
+                "submitted_at": iso_utc(attempt.submitted_at), "result": deepcopy(attempt.result),
+            }
+    return {"captured_at": iso_utc(utc_now()), "snapshot_version": "candidate-evidence-v2",
             "skills": [{"id": skill.id, "skill_name": skill.skill_name, "proficiency": skill.proficiency} for skill in skills],
-            "evidence": [item.to_dict() for item in evidence], "sql_assessment": assessed}
+            "evidence": [item.to_dict() for item in evidence], "assessments": assessments,
+            "sql_assessment": deepcopy(assessments.get("sql"))}
 
 
 def existing_submission(user_id, key):
