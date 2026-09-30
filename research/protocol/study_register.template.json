@@ -1,0 +1,107 @@
+{
+  "schema_version": "career-study-register-v1",
+  "protocol_version": "career-pilot-protocol-v1",
+  "status": "template_not_collected_not_frozen",
+  "prepared_on": "2026-09-29",
+  "timezone": "Asia/Kolkata",
+  "actual_freeze_timestamp": null,
+  "actual_git_commit": null,
+  "actual_worktree_clean": null,
+  "coordinator_id": null,
+  "implementation_inspected_at": "272efb0da68995a55626f1c044bf961a2a1da317",
+  "versions_to_verify_at_freeze": {
+    "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+    "model_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "skill_catalog": "backend-skills-2026-09-27-v1",
+    "extraction": "skill-extraction-context-v2",
+    "assessment_banks": {
+      "sql": "sql-foundations-v1",
+      "python": "python-foundations-v1",
+      "rest_api": "rest-http-foundations-v1"
+    },
+    "roadmap_policy": "topic-evidence-rules-v1"
+  },
+  "rq1": {
+    "status": "not_collected",
+    "planned_jobs": 24,
+    "planned_development_jobs": 12,
+    "planned_test_jobs": 12,
+    "actual_jobs": null,
+    "actual_test_jobs": null,
+    "packet_private_path": null,
+    "packet_fingerprint": null,
+    "original_pilot_exposure": "pilot-v1 and AI draft were used in development; not a clean prospective test",
+    "new_packet_overlap_audit": null,
+    "independence_claim_and_basis": null,
+    "reviewer_ids": [],
+    "adjudicator_id": null,
+    "reviewer_qualifications_private_path": null,
+    "review_files_and_hashes": [],
+    "uncertainty_policy": "Exclude unresolved uncertain job-skill cells identically for both methods and report coverage.",
+    "run_directories": []
+  },
+  "rq2": {
+    "status": "not_collected",
+    "planned_participants": 6,
+    "planned_people_per_skill": 2,
+    "actual_participants": null,
+    "actual_topic_cases": null,
+    "selection": "Convenience pilot; one supported skill and three topics per participant.",
+    "diagnostic_content_review_private_path": null,
+    "practical_task_versions_and_review_records": [],
+    "reference_rater_ids": [],
+    "reference_rater_exposure": null,
+    "conditions": {
+      "B0": "Self-rating 1-5: practice; 6-10: no_targeted_practice; missing: collect_evidence.",
+      "B1": "Wrong or skipped MCQ item: practice; all correct: no_targeted_practice; absent attempt: collect_evidence.",
+      "B2": "Any wrong: practice; otherwise skipped: collect_evidence; all correct: no_targeted_practice; absent attempt: collect_evidence."
+    },
+    "actions": [
+      "practice",
+      "collect_evidence",
+      "no_targeted_practice"
+    ],
+    "reference_labels": [
+      "practice_supported",
+      "no_targeted_practice_supported",
+      "insufficient_reference"
+    ],
+    "utility": {
+      "practice_supported": {
+        "practice": 2,
+        "collect_evidence": 1,
+        "no_targeted_practice": 0
+      },
+      "no_targeted_practice_supported": {
+        "practice": 0,
+        "collect_evidence": 1,
+        "no_targeted_practice": 2
+      },
+      "insufficient_reference": {
+        "practice": 0,
+        "collect_evidence": 2,
+        "no_targeted_practice": 0
+      }
+    },
+    "primary_contrast": "B2 minus B0; mean within participant over resolved references, then equal-weight participants.",
+    "secondary_contrast": "B2 minus B1 with the same rule; separately describe topics with skips.",
+    "insufficient_reference_policy": "Separate descriptive/sensitivity table; exclude from primary contrast.",
+    "zero_denominator_policy": "N/A; do not replace missing values with zero.",
+    "presentation_order_if_used": [
+      "B0,B1,B2",
+      "B1,B2,B0",
+      "B2,B0,B1"
+    ],
+    "participant_private_records": [],
+    "exclusions": [],
+    "results_private_path": null
+  },
+  "deviations": [],
+  "human_protocol_review": {
+    "reviewer_id": null,
+    "date": null,
+    "decision": "pending",
+    "notes": null
+  },
+  "publication_claim_status": "No independent results or confirmed novelty supplied by this template."
+}

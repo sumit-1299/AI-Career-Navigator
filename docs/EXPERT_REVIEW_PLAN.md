@@ -1,13 +1,17 @@
 # Expert review plan — Saturday 3 October 2026
 
-Plan updated 29 September 2026. Target: a coherent, reproducible research prototype
+Plan updated 30 September 2026. Target: a coherent, reproducible research prototype
 and an honest preliminary evaluation. Keep extending the existing repository and
 credit the original team contribution. Do not restart the project.
+
+The focused literature comparison, precise claim boundaries and study forms are now
+available in [research/START_HERE.md](research/START_HERE.md). They remain drafts
+pending human review and collection; do not mark the evaluation complete.
 
 ## Central research question
 
 **Does assessment evidence, with explicit treatment of missing evidence, improve
-job-specific learning recommendations compared with self-reported skills alone?**
+job-linked learning recommendations compared with self-reported skills alone?**
 
 This is a proposed question, not an established novelty claim. Semantic skill
 extraction already has substantial prior work; for example,
@@ -39,7 +43,7 @@ eligibility, employability or comprehensive skill coverage.
 | Work | Concrete output | Completion condition |
 | --- | --- | --- |
 | Question/content review | Human review of each item, answer, ambiguity and topic coverage | Record reviewer, date, issue and resolution; version any later bank change |
-| Literature comparison | 6–10 closely relevant primary studies/systems, with citations | Compare evidence sources, uncertainty, live-job use, recommendations and evaluation; state a bounded gap |
+| Literature source check | Eight-work comparison drafted in `research/LITERATURE_MATRIX.md` | Verify reading limits and metadata, inspect remaining full texts and refine the bounded contribution |
 | Independent extraction pilot | Original frozen text, independent reviews and adjudication | Use genuinely independent reviewers; preserve disagreements and evaluate held-out data only after decisions are fixed |
 | Recommendation pilot | Prespecified protocol, candidate cases and expert ratings | Test whether evidence changes the appropriateness of recommended actions; report the sample and limits |
 | Review documents | Project report, paper draft and short slide deck | Methods match implementation; distinguish observations, preliminary results and planned work |
@@ -98,8 +102,7 @@ and present the result as independent validation or a new foundation model.
 
 | Date | Deliverable |
 | --- | --- |
-| Tue 29 Sep | Install and check the integrated multi-skill batch; distribute content/literature work within the team; fix the study protocol |
-| Wed 30 Sep | Content review, bounded literature matrix, frozen prototype and start independent annotation/pilot |
+| Wed 30 Sep | Install research batch; settle roles, content/source review and freeze study inputs before independent annotation/pilot; begin report methods |
 | Thu 1 Oct | Finish feasible pilot runs, analyse errors and document limitations; preserve incomplete results honestly |
 | Fri 2 Oct | Feature freeze; finish report/paper draft/slides; rehearse demo and record backup |
 | Sat 3 Oct | Show the system, available evidence and precisely scoped research question; obtain expert feedback |

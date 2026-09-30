@@ -1,6 +1,6 @@
 # AI Career Navigator — implementation and research status
 
-Updated 29 September 2026. This file distinguishes working functionality from
+Updated 30 September 2026. This file distinguishes working functionality from
 planned research claims. See [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for the broader
 product vision; not every part of that vision is implemented.
 
@@ -13,7 +13,7 @@ product vision; not every part of that vision is implemented.
 | Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions; latest submitted SQL/Python/REST evidence per skill and context review | Rules and thresholds need independent validation; no overall hiring probability, suitability rank or proficiency score |
 | Live jobs | Selected Canonical/Razorpay boards, cached freshness, filtering and versioned comparison snapshots | Limited employer coverage, manual refresh, no market-wide feed |
 | Evaluation tools | Frozen job exporter, independent annotation page, adjudication, paired extraction metrics and a separate AI-draft development diagnostic | Human validation remains pending; agreement with an AI draft is preliminary and cannot establish accuracy |
-| Research contribution | Candidate evidence, uncertainty and source snapshots form the proposed approach | Literature gap/novelty and added decision value are not established by working features alone |
+| Research contribution | Evidence distinctions and source snapshots implemented; focused eight-work literature matrix and two-part pilot protocol drafted | Close prior-work overlap exists; novelty and recommendation benefit remain unproven; human source/content review and data collection pending |
 | Training | Pretrained model used for inference | No project-specific supervised training or fine-tuning completed |
 
 The next research task is documented in
@@ -46,6 +46,9 @@ catalogue in `backend/services/skill_catalog.py`; the earlier occupational datas
 are not yet a fully integrated recommendation model or labelled training dataset.
 
 The next delivery sequence and study priorities are in [EXPERT_REVIEW_PLAN.md](EXPERT_REVIEW_PLAN.md).
+
+The research preparation batch starts at [research/START_HERE.md](research/START_HERE.md).
+It contains blank forms and a proposed protocol, not new study results.
 
 ## Relevant implementation notes
 

@@ -22,7 +22,9 @@ roadmap outcomes, or research novelty. These distinctions must remain in the pap
 unknown/unverified states help reviewers make better skill-gap decisions than
 self-reported profiles alone? That requires a separate evaluation with independently
 reviewed candidate-task evidence and a predefined outcome. Do not claim that RQ1
-answers RQ2. The existing six-question SQL diagnostic is still draft content.
+answers RQ2. The SQL, Python and REST/HTTP six-question diagnostics remain draft content.
+The separate [recommendation pilot protocol](research/PILOT_PROTOCOL.md) defines
+RQ2 controls, practical-task references, outcome rubrics and collection forms.
 
 ## Team workflow
 
