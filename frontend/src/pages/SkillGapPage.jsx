@@ -15,6 +15,9 @@ import {
   Milestone,
   Sparkles,
   ExternalLink,
+  Clock,
+  Calendar,
+  Flame,
 } from 'lucide-react';
 
 export function SkillGapPage() {
@@ -30,6 +33,10 @@ export function SkillGapPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('gap'); // 'gap' | 'roadmap'
+
+  // Module 8.3: Study intensity (5 | 10 | 20 hours/week)
+  const [hoursPerWeek, setHoursPerWeek] = useState(10);
+  const [updatingTimeline, setUpdatingTimeline] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -51,7 +58,7 @@ export function SkillGapPage() {
           console.warn('Skill gap fetch failed', e);
           return null;
         }),
-        api.getRoadmap(activeCareerId).catch((e) => {
+        api.getRoadmap(activeCareerId, hoursPerWeek).catch((e) => {
           console.warn('Roadmap fetch failed', e);
           return null;
         }),
@@ -63,6 +70,19 @@ export function SkillGapPage() {
       setError(err.message || 'Failed to load skill-gap analysis');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleIntensityChange(hrs) {
+    setHoursPerWeek(hrs);
+    setUpdatingTimeline(true);
+    try {
+      const roadRes = await api.getRoadmap(activeCareerId, hrs);
+      setRoadmapData(roadRes);
+    } catch (e) {
+      console.warn('Failed to update study plan roadmap:', e);
+    } finally {
+      setUpdatingTimeline(false);
     }
   }
 
@@ -100,6 +120,7 @@ export function SkillGapPage() {
     (gapData?.skill_gaps?.filter((s) => s.status === 'MATCHED') || []);
 
   const roadmapSteps =
+    roadmapData?.roadmap?.sequential_steps ||
     roadmapData?.roadmap?.steps ||
     roadmapData?.roadmap_steps ||
     roadmapData?.steps ||
@@ -107,6 +128,28 @@ export function SkillGapPage() {
   const certifications =
     roadmapData?.roadmap?.certifications ||
     roadmapData?.certifications ||
+    [];
+
+  // Module 8.3: Study intensity & timeline metrics
+  const estimatedTotalHours =
+    roadmapData?.estimated_total_hours ??
+    roadmapData?.roadmap?.estimated_total_hours ??
+    roadmapData?.roadmap?.study_plan?.estimated_total_hours ??
+    0;
+  const estimatedWeeks =
+    roadmapData?.estimated_weeks ??
+    roadmapData?.roadmap?.estimated_weeks ??
+    roadmapData?.roadmap?.study_plan?.estimated_weeks ??
+    0;
+  const estimatedCompletionDate =
+    roadmapData?.estimated_completion_date ??
+    roadmapData?.roadmap?.estimated_completion_date ??
+    roadmapData?.roadmap?.study_plan?.estimated_completion_date ??
+    null;
+  const weeklyMilestones =
+    roadmapData?.weekly_milestones ??
+    roadmapData?.roadmap?.weekly_milestones ??
+    roadmapData?.roadmap?.study_plan?.weekly_milestones ??
     [];
 
   return (
@@ -411,6 +454,127 @@ export function SkillGapPage() {
           {/* TAB 2: Sequential Career Roadmap & Certs */}
           {activeTab === 'roadmap' && (
             <div className="space-y-6">
+              {/* Study Intensity & Completion Timeline (Module 8.3) */}
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <span className="p-2.5 bg-primary-50 text-primary-600 rounded-xl">
+                      <Clock className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">
+                        Study Intensity & Completion Timeline
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Select your weekly study commitment to project your completion timeline and milestones.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Intensity Selector: 5 / 10 / 20 hrs/week */}
+                  <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+                    {[
+                      { hours: 5, label: '5 hrs/wk', pace: 'Light' },
+                      { hours: 10, label: '10 hrs/wk', pace: 'Standard' },
+                      { hours: 20, label: '20 hrs/wk', pace: 'Intensive' },
+                    ].map(({ hours, label, pace }) => (
+                      <button
+                        key={hours}
+                        type="button"
+                        onClick={() => handleIntensityChange(hours)}
+                        disabled={updatingTimeline}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                          hoursPerWeek === hours
+                            ? 'bg-primary-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                        }`}
+                        title={`${pace} pace (${hours} hours per week)`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Timeline Metrics Strip */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5">
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Study Intensity
+                    </span>
+                    <p className="text-xl font-extrabold text-slate-900 mt-1 flex items-center justify-center gap-1">
+                      <Flame className="w-4 h-4 text-amber-500" />
+                      {hoursPerWeek} hrs/week
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Total Workload
+                    </span>
+                    <p className="text-xl font-extrabold text-slate-900 mt-1">
+                      {estimatedTotalHours} hrs
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-xl bg-primary-50/50 border border-primary-200 text-center">
+                    <span className="text-[11px] font-bold text-primary-700 uppercase tracking-wider block">
+                      Estimated Duration
+                    </span>
+                    <p className="text-xl font-extrabold text-primary-700 mt-1">
+                      {estimatedWeeks} {estimatedWeeks === 1 ? 'Week' : 'Weeks'}
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200 text-center">
+                    <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">
+                      Target Completion
+                    </span>
+                    <p className="text-sm font-extrabold text-emerald-700 mt-1.5 flex items-center justify-center gap-1">
+                      <Calendar className="w-3.5 h-3.5" />
+                      {estimatedCompletionDate || 'N/A'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Weekly Milestones Breakdown */}
+                {weeklyMilestones.length > 0 && (
+                  <div className="mt-6 pt-5 border-t border-slate-100">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
+                      Week-by-Week Milestones ({weeklyMilestones.length} Weeks)
+                    </h4>
+                    <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                      {weeklyMilestones.map((m) => (
+                        <div
+                          key={m.week}
+                          className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="w-16 px-2 py-1 rounded-md bg-white border border-slate-200 font-bold text-slate-800 text-center shrink-0">
+                              Week {m.week}
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {m.skills && m.skills.length > 0 ? (
+                                m.skills.map((sk, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="px-2 py-0.5 rounded-md bg-primary-50 text-primary-700 font-semibold text-[11px]"
+                                  >
+                                    {sk}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-slate-400 italic text-[11px]">Review & Labs</span>
+                              )}
+                            </div>
+                          </div>
+                          <span className="font-semibold text-slate-500 text-[11px] shrink-0">
+                            {m.target_hours} hrs target
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Sequential Steps */}
               <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
                 <div className="flex items-center gap-2.5 mb-6">

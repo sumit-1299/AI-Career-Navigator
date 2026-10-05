@@ -5,6 +5,8 @@ Deterministic, explainable learning roadmap generator based on identified skill 
 Maps prioritized skill gaps to recommended milestones, learning modalities, and industry certification paths.
 """
 
+import math
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from models.canonical_skill import CanonicalSkill
 
@@ -112,13 +114,99 @@ class RoadmapService:
         return []
 
     @classmethod
+    def calculate_study_plan(
+        cls,
+        roadmap_steps: List[Dict[str, Any]],
+        hours_per_week: int
+    ) -> Dict[str, Any]:
+        """
+        Calculates estimated total hours, weeks to completion, completion date,
+        and distributes steps into weekly milestones based on study intensity.
+        """
+        if hours_per_week <= 0:
+            raise ValueError("hours_per_week must be greater than zero")
+
+        total_required_hours = sum(step.get("estimated_hours", 0) for step in roadmap_steps)
+
+        if total_required_hours == 0 or len(roadmap_steps) == 0:
+            today_str = datetime.now().date().isoformat()
+            return {
+                "hours_per_week": hours_per_week,
+                "estimated_total_hours": 0,
+                "estimated_weeks": 0,
+                "estimated_completion_date": today_str,
+                "weekly_milestones": []
+            }
+
+        estimated_weeks = math.ceil(total_required_hours / hours_per_week)
+        completion_date = (datetime.now().date() + timedelta(weeks=estimated_weeks)).isoformat()
+
+        # Build continuous interval for each roadmap step
+        step_intervals = []
+        current_hr = 0
+        for s in roadmap_steps:
+            s_hours = s.get("estimated_hours", 0)
+            step_intervals.append({
+                "step": s,
+                "start": current_hr,
+                "end": current_hr + s_hours
+            })
+            current_hr += s_hours
+
+        # Distribute workload across weeks
+        weekly_milestones = []
+        for w in range(1, estimated_weeks + 1):
+            w_start = (w - 1) * hours_per_week
+            w_end = min(total_required_hours, w * hours_per_week)
+            w_hours = w_end - w_start
+
+            active_skills = []
+            active_step_details = []
+
+            for item in step_intervals:
+                s_start = item["start"]
+                s_end = item["end"]
+                # Overlap condition
+                if max(w_start, s_start) < min(w_end, s_end):
+                    overlap_hrs = min(w_end, s_end) - max(w_start, s_start)
+                    step_obj = item["step"]
+                    sk_name = step_obj["skill_name"]
+                    if sk_name not in active_skills:
+                        active_skills.append(sk_name)
+                    active_step_details.append({
+                        "step_number": step_obj["step_number"],
+                        "skill_name": sk_name,
+                        "allocated_hours": overlap_hrs,
+                        "recommended_action": step_obj.get("recommended_action", "")
+                    })
+
+            title_skills = ", ".join(active_skills) if active_skills else "Milestone Consolidation"
+            weekly_milestones.append({
+                "week": w,
+                "target_hours": w_hours,
+                "skills": active_skills,
+                "milestone_title": f"Week {w}: {title_skills}",
+                "steps": active_step_details
+            })
+
+        return {
+            "hours_per_week": hours_per_week,
+            "estimated_total_hours": total_required_hours,
+            "estimated_weeks": estimated_weeks,
+            "estimated_completion_date": completion_date,
+            "weekly_milestones": weekly_milestones
+        }
+
+    @classmethod
     def generate_roadmap(
         cls,
         career_title: str,
-        skill_gaps: List[Dict[str, Any]]
+        skill_gaps: List[Dict[str, Any]],
+        hours_per_week: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Creates an actionable sequential roadmap addressing prioritized skill gaps.
+        Creates an actionable sequential roadmap addressing prioritized skill gaps,
+        optionally incorporating weekly study intensity and timeline calculation.
         """
         # Filter only items requiring action (MISSING and WEAK)
         actionable_gaps = [
@@ -135,18 +223,22 @@ class RoadmapService:
         step_counter = 1
         for gap in actionable_gaps:
             status = gap["status"]
-            importance = gap["importance"]
+            importance = gap.get("importance", 3)
             skill_name = gap["skill_name"]
-            req_level = gap["required_level"]
-            score = gap["priority_score"]
+            req_level = gap.get("required_level", 3)
+            score = gap.get("priority_score", 0.0)
+            curr_prof = gap.get("current_proficiency", 0)
+            gap_val = gap.get("gap_value", max(1, req_level - curr_prof))
 
             norm_name = skill_name.lower()
             certs = cls.get_certifications_for_skill(skill_name, norm_name)
 
             if status == "MISSING":
+                estimated_hours = 10 + int(req_level) * 5
                 action = f"Complete foundational coursework and build introductory practical projects in {skill_name}."
                 modalities = ["Interactive coding courses", "Official documentation quickstarts", "Tutorial repositories"]
             else:  # WEAK
+                estimated_hours = max(8, int(gap_val) * 8)
                 action = f"Reinforce proficiency from current level to required level {req_level}/5 through advanced lab exercises."
                 modalities = ["Hands-on portfolio projects", "Code refactoring & unit testing", "Production scenario drills"]
 
@@ -155,9 +247,10 @@ class RoadmapService:
                 "skill_name": skill_name,
                 "gap_status": status,
                 "required_level": req_level,
-                "current_proficiency": gap["current_proficiency"],
+                "current_proficiency": curr_prof,
                 "importance": importance,
                 "priority_score": score,
+                "estimated_hours": estimated_hours,
                 "recommended_action": action,
                 "learning_modalities": modalities,
                 "industry_certifications": certs,
@@ -177,7 +270,7 @@ class RoadmapService:
             roadmap_steps.append(step_item)
             step_counter += 1
 
-        return {
+        result = {
             "career_target": career_title,
             "total_roadmap_steps": len(roadmap_steps),
             "roadmap_phases": [
@@ -191,7 +284,22 @@ class RoadmapService:
             }
         }
 
+        if hours_per_week is not None:
+            study_plan = cls.calculate_study_plan(roadmap_steps, hours_per_week)
+            result["study_plan"] = study_plan
+            result["hours_per_week"] = study_plan["hours_per_week"]
+            result["estimated_total_hours"] = study_plan["estimated_total_hours"]
+            result["estimated_weeks"] = study_plan["estimated_weeks"]
+            result["estimated_completion_date"] = study_plan["estimated_completion_date"]
+            result["weekly_milestones"] = study_plan["weekly_milestones"]
 
-def generate_learning_roadmap(career_title: str, skill_gaps: List[Dict[str, Any]]) -> Dict[str, Any]:
+        return result
+
+
+def generate_learning_roadmap(
+    career_title: str,
+    skill_gaps: List[Dict[str, Any]],
+    hours_per_week: Optional[int] = None
+) -> Dict[str, Any]:
     """Helper wrapper for roadmap generation."""
-    return RoadmapService.generate_roadmap(career_title, skill_gaps)
+    return RoadmapService.generate_roadmap(career_title, skill_gaps, hours_per_week=hours_per_week)

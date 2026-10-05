@@ -14,6 +14,7 @@ from extensions import db
 from models.user import User
 from models.career import Career
 from services.resume_extraction_service import ResumeExtractionService
+from services.roadmap_service import RoadmapService, generate_learning_roadmap
 
 
 class TestPhase8Module82ATSScoring(unittest.TestCase):
@@ -170,5 +171,168 @@ class TestPhase8Module82ATSScoring(unittest.TestCase):
         self.assertGreaterEqual(data["detected_skills_count"], 1)
 
 
+class TestPhase8Module83StudyPlan(unittest.TestCase):
+    """Test suite for Phase 8 Module 8.3 Structured Weekly Study Plan & Completion Timeline Calculator."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+
+        cls.user = User.query.filter_by(email="phase8_test@example.com").first()
+        if not cls.user:
+            cls.user = User(
+                name="Phase8 Test User",
+                email="phase8_test@example.com",
+                password_hash=generate_password_hash("password123")
+            )
+            db.session.add(cls.user)
+            db.session.commit()
+
+        resp = cls.client.post("/api/login", json={
+            "email": "phase8_test@example.com",
+            "password": "password123"
+        })
+        data = resp.get_json()
+        cls.token = data.get("access_token")
+        cls.headers = {"Authorization": f"Bearer {cls.token}"}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def test_study_plan_5_hours_per_week(self):
+        """Test study plan calculation at 5 hours/week intensity."""
+        sample_steps = [
+            {"step_number": 1, "skill_name": "Python", "estimated_hours": 25},
+            {"step_number": 2, "skill_name": "SQL", "estimated_hours": 15},
+        ]
+        plan = RoadmapService.calculate_study_plan(sample_steps, hours_per_week=5)
+        self.assertEqual(plan["hours_per_week"], 5)
+        self.assertEqual(plan["estimated_total_hours"], 40)
+        self.assertEqual(plan["estimated_weeks"], 8)
+        self.assertEqual(len(plan["weekly_milestones"]), 8)
+        total_target = sum(m["target_hours"] for m in plan["weekly_milestones"])
+        self.assertEqual(total_target, 40)
+
+    def test_study_plan_10_hours_per_week(self):
+        """Test study plan calculation at 10 hours/week intensity."""
+        sample_steps = [
+            {"step_number": 1, "skill_name": "Python", "estimated_hours": 25},
+            {"step_number": 2, "skill_name": "SQL", "estimated_hours": 15},
+        ]
+        plan = RoadmapService.calculate_study_plan(sample_steps, hours_per_week=10)
+        self.assertEqual(plan["hours_per_week"], 10)
+        self.assertEqual(plan["estimated_total_hours"], 40)
+        self.assertEqual(plan["estimated_weeks"], 4)
+        self.assertEqual(len(plan["weekly_milestones"]), 4)
+
+    def test_study_plan_20_hours_per_week(self):
+        """Test study plan calculation at 20 hours/week intensity."""
+        sample_steps = [
+            {"step_number": 1, "skill_name": "Python", "estimated_hours": 25},
+            {"step_number": 2, "skill_name": "SQL", "estimated_hours": 15},
+        ]
+        plan = RoadmapService.calculate_study_plan(sample_steps, hours_per_week=20)
+        self.assertEqual(plan["hours_per_week"], 20)
+        self.assertEqual(plan["estimated_total_hours"], 40)
+        self.assertEqual(plan["estimated_weeks"], 2)
+        self.assertEqual(len(plan["weekly_milestones"]), 2)
+
+    def test_study_plan_math_ceil_rounding(self):
+        """Test that completion weeks rounds up via math.ceil (e.g. 25 hrs @ 10 hrs/wk -> 3 weeks)."""
+        sample_steps = [
+            {"step_number": 1, "skill_name": "Python", "estimated_hours": 25},
+        ]
+        plan = RoadmapService.calculate_study_plan(sample_steps, hours_per_week=10)
+        self.assertEqual(plan["estimated_weeks"], 3)
+        self.assertEqual(len(plan["weekly_milestones"]), 3)
+        self.assertEqual(plan["weekly_milestones"][0]["target_hours"], 10)
+        self.assertEqual(plan["weekly_milestones"][1]["target_hours"], 10)
+        self.assertEqual(plan["weekly_milestones"][2]["target_hours"], 5)
+
+    def test_study_plan_completion_date_format(self):
+        """Test that estimated_completion_date is a valid ISO date YYYY-MM-DD in the future."""
+        sample_steps = [
+            {"step_number": 1, "skill_name": "Docker", "estimated_hours": 20},
+        ]
+        plan = RoadmapService.calculate_study_plan(sample_steps, hours_per_week=10)
+        date_str = plan["estimated_completion_date"]
+        self.assertRegex(date_str, r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_study_plan_zero_hours_or_empty_steps(self):
+        """Test edge case when student has 0 gaps (empty steps / 0 hours)."""
+        plan = RoadmapService.calculate_study_plan([], hours_per_week=10)
+        self.assertEqual(plan["estimated_total_hours"], 0)
+        self.assertEqual(plan["estimated_weeks"], 0)
+        self.assertEqual(plan["weekly_milestones"], [])
+        self.assertRegex(plan["estimated_completion_date"], r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_study_plan_invalid_non_positive_hours_raises_error(self):
+        """Test that non-positive hours_per_week raises ValueError."""
+        with self.assertRaises(ValueError):
+            RoadmapService.calculate_study_plan([], hours_per_week=0)
+        with self.assertRaises(ValueError):
+            RoadmapService.calculate_study_plan([], hours_per_week=-5)
+
+    def test_api_roadmap_with_valid_hours_per_week(self):
+        """API Test: GET /api/careers/1/roadmap?hours_per_week=10 returns study plan metrics."""
+        resp = self.client.get("/api/careers/1/roadmap?hours_per_week=10", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["hours_per_week"], 10)
+        self.assertIn("estimated_total_hours", data)
+        self.assertIn("estimated_weeks", data)
+        self.assertIn("estimated_completion_date", data)
+        self.assertIn("weekly_milestones", data)
+        self.assertGreater(data["estimated_total_hours"], 0)
+        self.assertGreater(data["estimated_weeks"], 0)
+        self.assertIsInstance(data["weekly_milestones"], list)
+
+    def test_api_roadmap_backward_compatibility_omitted_param(self):
+        """Backward Compatibility: GET /api/careers/1/roadmap without hours_per_week succeeds."""
+        resp = self.client.get("/api/careers/1/roadmap", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["career_id"], 1)
+        self.assertIn("roadmap", data)
+        self.assertNotIn("hours_per_week", data)
+
+    def test_api_roadmap_invalid_zero_hours_returns_400(self):
+        """Validation: hours_per_week=0 returns 400 Bad Request."""
+        resp = self.client.get("/api/careers/1/roadmap?hours_per_week=0", headers=self.headers)
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "error")
+
+    def test_api_roadmap_invalid_negative_hours_returns_400(self):
+        """Validation: negative hours_per_week returns 400 Bad Request."""
+        resp = self.client.get("/api/careers/1/roadmap?hours_per_week=-10", headers=self.headers)
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "error")
+
+    def test_api_roadmap_invalid_non_numeric_hours_returns_400(self):
+        """Validation: non-numeric hours_per_week returns 400 Bad Request."""
+        resp = self.client.get("/api/careers/1/roadmap?hours_per_week=fast", headers=self.headers)
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "error")
+
+    def test_api_roadmap_unsupported_intensity_returns_400(self):
+        """Validation: unsupported intensities (e.g. 7 or 15) return 400 Bad Request."""
+        for unsupported in [7, 15, 30]:
+            resp = self.client.get(f"/api/careers/1/roadmap?hours_per_week={unsupported}", headers=self.headers)
+            self.assertEqual(resp.status_code, 400)
+            data = resp.get_json()
+            self.assertEqual(data["status"], "error")
+
+
 if __name__ == "__main__":
     unittest.main()
+

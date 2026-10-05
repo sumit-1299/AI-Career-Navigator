@@ -214,8 +214,27 @@ def get_career_skill_gap(career_id):
 @jwt_required(optional=True)
 def get_career_roadmap(career_id):
     """
-    Generate an explainable learning roadmap based on identified skill gaps.
+    Generate an explainable learning roadmap based on identified skill gaps,
+    optionally incorporating weekly study intensity (5, 10, or 20 hours/week).
     """
+    # 1. Study intensity validation
+    hours_per_week_raw = request.args.get("hours_per_week")
+    hours_per_week = None
+    if hours_per_week_raw is not None:
+        try:
+            hours_per_week = int(hours_per_week_raw)
+        except (ValueError, TypeError):
+            return jsonify({
+                "status": "error",
+                "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+            }), 400
+
+        if hours_per_week not in [5, 10, 20]:
+            return jsonify({
+                "status": "error",
+                "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+            }), 400
+
     user_id = get_jwt_identity()
     if not user_id:
         param_user = request.args.get("user_id", type=int)
@@ -235,15 +254,25 @@ def get_career_roadmap(career_id):
 
     roadmap = generate_learning_roadmap(
         gap_analysis["career"]["title"],
-        gap_analysis["prioritized_skill_gaps"]
+        gap_analysis["prioritized_skill_gaps"],
+        hours_per_week=hours_per_week
     )
 
-    return jsonify({
+    response_payload = {
         "status": "success",
         "career_id": career_id,
         "readiness_percentage": gap_analysis["summary"]["readiness_percentage"],
         "roadmap": roadmap,
-    }), 200
+    }
+
+    if hours_per_week is not None:
+        response_payload["hours_per_week"] = roadmap.get("hours_per_week", hours_per_week)
+        response_payload["estimated_total_hours"] = roadmap.get("estimated_total_hours", 0)
+        response_payload["estimated_weeks"] = roadmap.get("estimated_weeks", 0)
+        response_payload["estimated_completion_date"] = roadmap.get("estimated_completion_date")
+        response_payload["weekly_milestones"] = roadmap.get("weekly_milestones", [])
+
+    return jsonify(response_payload), 200
 
 
 @careers_bp.route("/<int:from_id>/transition/<int:to_id>", methods=["GET"])

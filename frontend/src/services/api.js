@@ -184,7 +184,10 @@ export const api = {
 
   getSkillGap: (careerId) => request(`/careers/${careerId}/skill-gap`),
 
-  getRoadmap: (careerId) => request(`/careers/${careerId}/roadmap`),
+  getRoadmap: (careerId, hoursPerWeek = null) => {
+    const query = hoursPerWeek ? `?hours_per_week=${hoursPerWeek}` : '';
+    return request(`/careers/${careerId}/roadmap${query}`);
+  },
 
   compareCareers: (careerAId, careerBId) =>
     request(`/careers/compare?career_a_id=${careerAId}&career_b_id=${careerBId}`),
