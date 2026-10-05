@@ -77,17 +77,45 @@ class ProviderTests(unittest.TestCase):
         cases = [
             {},
             {"jobs": [], "meta": {"total": 1}},
-            feed(posting(), posting()),
-            feed(posting(title="")),
-            feed(posting(content="")),
-            feed(posting(updated_at="yesterday")),
-            feed(posting(location=None)),
+            feed(
+                posting(
+                    title="",
+                )
+            ),
+            feed(
+                posting(
+                    content="",
+                )
+            ),
+            feed(
+                posting(
+                    updated_at="yesterday",
+                )
+            ),
         ]
 
         for data in cases:
             with self.subTest(data=data):
                 with self.assertRaises(FeedUnavailable):
                     normalize_feed(data)
+
+    def test_valid_multiple_postings_are_accepted(self):
+        jobs, prospects = normalize_feed(
+            feed(
+                posting(1),
+                posting(2),
+            )
+        )
+
+        self.assertEqual(
+            len(jobs),
+            2,
+        )
+
+        self.assertEqual(
+            prospects,
+            0,
+        )
 
     def test_general_interest_posts_are_excluded(self):
         jobs, prospects = normalize_feed(
@@ -100,8 +128,39 @@ class ProviderTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(len(jobs), 1)
-        self.assertEqual(prospects, 1)
+        self.assertEqual(
+            len(jobs),
+            1,
+        )
+
+        self.assertEqual(
+            prospects,
+            1,
+        )
+
+    def test_missing_location_is_allowed(self):
+        jobs, prospects = normalize_feed(
+            feed(
+                posting(
+                    location=None,
+                )
+            )
+        )
+
+        self.assertEqual(
+            len(jobs),
+            1,
+        )
+
+        self.assertEqual(
+            jobs[0]["location"],
+            "",
+        )
+
+        self.assertEqual(
+            prospects,
+            0,
+        )
 
     def test_fetch_uses_only_configured_board(self):
         with patch(
@@ -225,7 +284,7 @@ class LiveJobsApiTests(unittest.TestCase):
 
     def test_listing_reads_live_provider(self):
         with patch(
-            "services.live_jobs.fetch_board",
+            "routes.jobs.fetch_board",
             return_value=feed(posting()),
         ) as fetch:
             response = self.client.get(
@@ -279,11 +338,14 @@ class LiveJobsApiTests(unittest.TestCase):
         ]
 
         with patch(
-            "services.live_jobs.fetch_board",
+            "routes.jobs.fetch_board",
             return_value=feed(*jobs),
-        ):
+        ) as fetch:
             response = self.client.get(
-                "/api/jobs?q=Python&location=Bengaluru",
+                "/api/jobs"
+                "?q=Python"
+                "&location=Bengaluru"
+                "&board=canonical",
                 headers=self.headers,
             )
 
@@ -304,9 +366,13 @@ class LiveJobsApiTests(unittest.TestCase):
             "Python Backend Engineer",
         )
 
+        fetch.assert_called_once_with(
+            "canonical"
+        )
+
     def test_selected_job_is_fetched_live(self):
         with patch(
-            "services.live_jobs.fetch_board",
+            "routes.jobs.fetch_board",
             return_value=feed(posting()),
         ) as fetch:
             response = self.client.get(
@@ -335,13 +401,15 @@ class LiveJobsApiTests(unittest.TestCase):
             data["job"]["description"]
         )
 
-        fetch.assert_called()
+        fetch.assert_called_once_with(
+            "canonical"
+        )
 
     def test_missing_live_job_returns_404(self):
         with patch(
-            "services.live_jobs.fetch_board",
+            "routes.jobs.fetch_board",
             return_value=feed(),
-        ):
+        ) as fetch:
             response = self.client.get(
                 "/api/jobs/canonical/999999",
                 headers=self.headers,
@@ -352,11 +420,15 @@ class LiveJobsApiTests(unittest.TestCase):
             404,
         )
 
+        fetch.assert_called_once_with(
+            "canonical"
+        )
+
     def test_live_comparison_saves_snapshot(self):
         with patch(
-            "services.live_jobs.fetch_board",
+            "routes.jobs.fetch_board",
             return_value=feed(posting()),
-        ):
+        ) as fetch:
             body = {
                 "submission_id": str(
                     uuid4()
@@ -397,6 +469,10 @@ class LiveJobsApiTests(unittest.TestCase):
 
         self.assertTrue(
             comparison["job"]["content_hash"]
+        )
+
+        fetch.assert_called_once_with(
+            "canonical"
         )
 
 

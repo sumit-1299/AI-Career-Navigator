@@ -318,7 +318,7 @@ function jobDetailMarkup() {
           target="_blank"
           rel="noopener noreferrer"
         >
-          Open employer posting ↗
+          View & apply on employer site ↗
         </a>
       </div>
 
