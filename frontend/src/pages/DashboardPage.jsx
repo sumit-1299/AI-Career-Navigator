@@ -504,55 +504,91 @@ export function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {recommendations.slice(0, 3).map((rec, idx) => (
-            <div
-              key={rec.career_id}
-              className="p-4 rounded-xl border border-slate-200 hover:border-primary-300 hover:shadow-md transition bg-gradient-to-b from-white to-slate-50 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                    Rank #{rec.recommendation_rank || idx + 1}
-                  </span>
-                  <Badge variant="info">{rec.readiness_category || 'Match'}</Badge>
-                </div>
-                <h3 className="font-bold text-slate-900 text-base">{rec.career_name}</h3>
-                <p className="text-xs text-slate-500 mb-3">{rec.domain}</p>
+          {recommendations.slice(0, 3).map((rec, idx) => {
+            const careerTitle = rec.career_title || rec.career_name || 'Career Pathway';
+            const displayScore = rec.final_score ?? rec.recommendation_score ?? rec.readiness_score ?? 0;
+            const matchedCnt = rec.matched_skills ? rec.matched_skills.length : (rec.matched_count || 0);
+            const missingCnt = rec.missing_skills ? rec.missing_skills.length : (rec.missing_count || 0);
 
-                <div className="space-y-1.5 mb-4">
-                  <div className="flex justify-between text-xs text-slate-600">
-                    <span>Readiness Match</span>
-                    <span className="font-bold text-slate-900">{rec.readiness_score}%</span>
+            return (
+              <div
+                key={rec.career_id}
+                className="p-4 rounded-xl border border-slate-200 hover:border-primary-300 hover:shadow-md transition bg-gradient-to-b from-white to-slate-50 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                      Rank #{rec.recommendation_rank || idx + 1}
+                    </span>
+                    <Badge variant={rec.is_personalized ? "success" : "info"}>
+                      {rec.is_personalized ? 'Multi-Factor Fit' : (rec.readiness_category || 'Match')}
+                    </Badge>
                   </div>
-                  <ProgressBar
-                    value={rec.readiness_score || 0}
-                    max={100}
-                    color="bg-primary-500"
-                  />
+                  <h3 className="font-bold text-slate-900 text-base">{careerTitle}</h3>
+                  <p className="text-xs text-slate-500 mb-3">{rec.domain}</p>
+
+                  <div className="space-y-1.5 mb-3">
+                    <div className="flex justify-between text-xs text-slate-600">
+                      <span>{rec.is_personalized ? 'Personalized Match' : 'Readiness Match'}</span>
+                      <span className="font-bold text-slate-900">{displayScore}%</span>
+                    </div>
+                    <ProgressBar
+                      value={displayScore}
+                      max={100}
+                      color={rec.is_personalized ? "bg-emerald-500" : "bg-primary-500"}
+                    />
+                  </div>
+
+                  {rec.factor_breakdown && (
+                    <div className="grid grid-cols-2 gap-1.5 mb-3 p-2 bg-slate-50 rounded-lg border border-slate-100 text-[10px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Skill (50%):</span>
+                        <span className="font-bold text-slate-800">{rec.factor_breakdown.skill_fit?.score}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Pref (20%):</span>
+                        <span className="font-bold text-slate-800">{rec.factor_breakdown.preference_fit?.score ?? 'N/A'}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Market (15%):</span>
+                        <span className="font-bold text-slate-800">{rec.factor_breakdown.market_demand?.score}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Acad (15%):</span>
+                        <span className="font-bold text-slate-800">{rec.factor_breakdown.academic_fit?.score ?? 'N/A'}%</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="text-[11px] text-slate-500 space-y-0.5">
+                    <p>✓ {matchedCnt} matching skills</p>
+                    <p>✗ {missingCnt} skills to acquire</p>
+                  </div>
+
+                  {rec.multi_factor_justification && (
+                    <p className="text-[10px] text-slate-500 italic mt-2.5 bg-slate-100/70 p-2 rounded-lg border border-slate-200/60 line-clamp-3">
+                      "{rec.multi_factor_justification}"
+                    </p>
+                  )}
                 </div>
 
-                <div className="text-[11px] text-slate-500 space-y-0.5">
-                  <p>✓ {rec.matched_count} matching skills</p>
-                  <p>✗ {rec.missing_count} skills to acquire</p>
+                <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
+                  <button
+                    onClick={() => setTargetCareerId(rec.career_id)}
+                    className="text-xs font-semibold text-primary-600 hover:text-primary-700"
+                  >
+                    Set as Target
+                  </button>
+                  <Link
+                    to={`/compare?a=${targetCareerId}&b=${rec.career_id}`}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-800"
+                  >
+                    Compare →
+                  </Link>
                 </div>
               </div>
-
-              <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
-                <button
-                  onClick={() => setTargetCareerId(rec.career_id)}
-                  className="text-xs font-semibold text-primary-600 hover:text-primary-700"
-                >
-                  Set as Target
-                </button>
-                <Link
-                  to={`/compare?a=${targetCareerId}&b=${rec.career_id}`}
-                  className="text-xs font-medium text-slate-500 hover:text-slate-800"
-                >
-                  Compare →
-                </Link>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

@@ -59,33 +59,78 @@ def list_careers():
 def get_career_recommendations():
     """
     Generate ranked multi-career recommendations for a student.
-    - If user is authenticated with JWT: uses student profile skills.
-    - If user_id is provided in query params: uses that student's skills.
+    - If user is authenticated with JWT: uses student profile skills, career preferences,
+      academic background, and market outlook for personalized multi-factor scoring (Module 9.1).
+    - If user_id is provided in query params without JWT: falls back to skill-only recommendations (backward compatible).
     - Otherwise evaluates with baseline/empty skill profile.
+    - Query parameters (limit, user_id) are strictly validated, returning HTTP 400 on malformed input.
     - Optional filters: domain, limit.
     """
-    user_id = get_jwt_identity()
-    if not user_id:
-        param_user = request.args.get("user_id", type=int)
-        if param_user:
-            user_id = str(param_user)
+    # 1. Validate query parameters
+    raw_limit = request.args.get("limit")
+    limit = None
+    if raw_limit is not None:
+        try:
+            limit = int(raw_limit)
+            if limit <= 0:
+                return jsonify({
+                    "status": "error",
+                    "message": "limit must be a positive integer"
+                }), 400
+        except (ValueError, TypeError):
+            return jsonify({
+                "status": "error",
+                "message": "limit must be a positive integer"
+            }), 400
+
+    raw_user_id = request.args.get("user_id")
+    param_user_id = None
+    if raw_user_id is not None:
+        try:
+            param_user_id = int(raw_user_id)
+            if param_user_id <= 0:
+                return jsonify({
+                    "status": "error",
+                    "message": "user_id must be a valid integer"
+                }), 400
+        except (ValueError, TypeError):
+            return jsonify({
+                "status": "error",
+                "message": "user_id must be a valid integer"
+            }), 400
+
+    # 2. Authoritative identity resolution
+    auth_identity = get_jwt_identity()
+    if auth_identity:
+        # Authenticated: JWT identity is strictly authoritative
+        user_id = int(auth_identity)
+        is_personalized = True
+    elif param_user_id:
+        # Unauthenticated: preserve backward compatibility for legacy queries
+        user_id = param_user_id
+        is_personalized = False
+    else:
+        user_id = None
+        is_personalized = False
 
     student_skills = []
     if user_id:
-        student_skills = Skill.query.filter_by(user_id=int(user_id)).all()
+        student_skills = Skill.query.filter_by(user_id=user_id).all()
 
     domain = request.args.get("domain")
-    limit = request.args.get("limit", type=int)
 
     recommendations = CareerRecommendationService.recommend_careers(
         student_skills=student_skills,
         domain_filter=domain,
-        limit=limit
+        limit=limit,
+        user_id=user_id if is_personalized else None,
+        is_personalized=is_personalized
     )
 
     return jsonify({
         "status": "success",
-        "user_id": int(user_id) if user_id else None,
+        "user_id": user_id,
+        "is_personalized": is_personalized,
         "count": len(recommendations),
         "recommendations": recommendations
     }), 200
