@@ -24,6 +24,7 @@ from services.career_comparison_service import CareerComparisonService
 from services.student_analytics_service import StudentAnalyticsService
 from services.roadmap_service import generate_learning_roadmap
 from services.skill_gap_service import assess_career_skill_gap
+from services.readiness_summary_service import ReadinessSummaryService
 
 careers_bp = Blueprint("careers", __name__, url_prefix="/api/careers")
 
@@ -435,3 +436,67 @@ def post_career_transition():
         "status": "success",
         "transition": result
     }), 200
+
+
+@careers_bp.route("/<int:career_id>/readiness-summary", methods=["GET", "POST"])
+@jwt_required(optional=True)
+def get_career_readiness_summary(career_id):
+    """
+    Placement-Ready Career Readiness Summary & Report View (Phase 8 Module 8.4).
+    Accepts:
+    - hours_per_week: query param or POST JSON (5, 10, or 20, default 10)
+    - resume_text: query param or POST JSON (optional)
+    """
+    hours_per_week = 10
+    resume_text = None
+
+    if request.method == "POST":
+        data = request.get_json() or {}
+        if "hours_per_week" in data:
+            try:
+                hours_per_week = int(data["hours_per_week"])
+            except (ValueError, TypeError):
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+                }), 400
+        resume_text = data.get("resume_text")
+    else:
+        hours_raw = request.args.get("hours_per_week")
+        if hours_raw is not None:
+            try:
+                hours_per_week = int(hours_raw)
+            except (ValueError, TypeError):
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+                }), 400
+        resume_text = request.args.get("resume_text")
+
+    if hours_per_week not in [5, 10, 20]:
+        return jsonify({
+            "status": "error",
+            "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+        }), 400
+
+    user_id = get_jwt_identity()
+    if not user_id:
+        param_user = request.args.get("user_id", type=int)
+        if param_user:
+            user_id = str(param_user)
+
+    summary = ReadinessSummaryService.generate_readiness_summary(
+        career_id=career_id,
+        user_id=int(user_id) if user_id else None,
+        hours_per_week=hours_per_week,
+        resume_text=resume_text
+    )
+
+    if not summary:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with ID {career_id} not found"
+        }), 404
+
+    return jsonify(summary), 200
+

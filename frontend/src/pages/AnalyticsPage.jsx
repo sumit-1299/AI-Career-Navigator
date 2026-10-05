@@ -11,7 +11,10 @@ import {
   BookOpen,
   Calendar,
   Zap,
+  FileText,
+  ShieldCheck,
 } from 'lucide-react';
+import { CareerReadinessReport } from '../components/analytics/CareerReadinessReport';
 
 export function AnalyticsPage() {
   const { targetCareerId, setTargetCareerId } = useAuth();
@@ -20,6 +23,7 @@ export function AnalyticsPage() {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('report'); // 'report' | 'velocity'
 
   useEffect(() => {
     loadCareers();
@@ -66,21 +70,49 @@ export function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      {/* Header & Sub-tab Navigation */}
+      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 no-print">
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Readiness Velocity & Learning ROI
+              Readiness Diagnostics & Placement Analytics
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Readiness Analytics & Velocity
+            Readiness Analytics & Reports
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Tracking your trajectory towards{' '}
+            Tracking employability, competency gaps, and learning trajectory towards{' '}
             <span className="font-semibold text-slate-800">{career_name || 'Target Role'}</span>
           </p>
+
+          {/* Sub-tab navigation */}
+          <div className="flex items-center gap-2 mt-4 p-1 bg-slate-100 rounded-xl w-fit">
+            <button
+              type="button"
+              onClick={() => setActiveTab('report')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeTab === 'report'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-primary-600" />
+              <span>Placement Readiness Report</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('velocity')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeTab === 'velocity'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4 text-indigo-600" />
+              <span>Velocity & Learning ROI</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -99,15 +131,22 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      {error && <Alert type="error" message={error} />}
+      {activeTab === 'report' ? (
+        <CareerReadinessReport
+          careerId={targetCareerId}
+          careerName={career_name || 'Target Role'}
+        />
+      ) : (
+        <>
+          {error && <Alert type="error" message={error} />}
 
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20">
-          <Spinner size="lg" />
-          <p className="mt-4 text-slate-500 font-medium">Computing learning velocity metrics...</p>
-        </div>
-      ) : analytics ? (
-        <div className="space-y-6 animate-fadeIn">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Spinner size="lg" />
+              <p className="mt-4 text-slate-500 font-medium">Computing learning velocity metrics...</p>
+            </div>
+          ) : analytics ? (
+            <div className="space-y-6 animate-fadeIn">
           {/* Velocity KPI Strip */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
@@ -281,6 +320,8 @@ export function AnalyticsPage() {
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
           <p className="text-slate-500 text-sm">No analytics recorded yet for this role.</p>
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -194,6 +194,21 @@ export const api = {
 
   getCareerAnalytics: (careerId) => request(`/careers/${careerId}/analytics`),
 
+  getCareerReadinessSummary: (careerId, options = {}) => {
+    const { hoursPerWeek = 10, resumeText = null } = options;
+    if (resumeText) {
+      return request(`/careers/${careerId}/readiness-summary`, {
+        method: 'POST',
+        body: JSON.stringify({
+          hours_per_week: hoursPerWeek,
+          resume_text: resumeText,
+        }),
+      });
+    }
+    const query = hoursPerWeek ? `?hours_per_week=${hoursPerWeek}` : '';
+    return request(`/careers/${careerId}/readiness-summary${query}`);
+  },
+
   // Career Market Outlook
   getCareerMarketOutlook: (careerId) => request(`/careers/${careerId}/market-outlook`),
   listMarketOutlooks: () => request('/careers/market-outlook'),

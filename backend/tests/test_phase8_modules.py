@@ -15,6 +15,7 @@ from models.user import User
 from models.career import Career
 from services.resume_extraction_service import ResumeExtractionService
 from services.roadmap_service import RoadmapService, generate_learning_roadmap
+from services.readiness_summary_service import ReadinessSummaryService
 
 
 class TestPhase8Module82ATSScoring(unittest.TestCase):
@@ -333,6 +334,181 @@ class TestPhase8Module83StudyPlan(unittest.TestCase):
             self.assertEqual(data["status"], "error")
 
 
+class TestPhase8Module84ReadinessReport(unittest.TestCase):
+    """Test suite for Phase 8 Module 8.4 Placement-Ready Career Readiness Summary & Report View."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+
+        cls.user = User.query.filter_by(email="phase8_test@example.com").first()
+        if not cls.user:
+            cls.user = User(
+                name="Phase8 Test User",
+                email="phase8_test@example.com",
+                password_hash=generate_password_hash("password123")
+            )
+            db.session.add(cls.user)
+            db.session.commit()
+
+        resp = cls.client.post("/api/login", json={
+            "email": "phase8_test@example.com",
+            "password": "password123"
+        })
+        data = resp.get_json()
+        cls.token = data.get("access_token")
+        cls.headers = {"Authorization": f"Bearer {cls.token}"}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def test_service_generate_summary_structure(self):
+        """Service Test: verify all required sections in readiness summary report."""
+        summary = ReadinessSummaryService.generate_readiness_summary(
+            career_id=1,
+            user_id=self.user.id,
+            hours_per_week=10
+        )
+        self.assertIsNotNone(summary)
+        self.assertEqual(summary["status"], "success")
+        self.assertEqual(summary["career_id"], 1)
+        self.assertEqual(summary["career_title"], "Software Developer")
+        self.assertEqual(summary["career_category"], "Software Development")
+
+        # 1. Overall readiness
+        self.assertIn("overall_readiness", summary)
+        self.assertIn("percentage", summary["overall_readiness"])
+        self.assertIn("category", summary["overall_readiness"])
+
+        # 2. Competencies & gaps
+        self.assertIn("verified_skills", summary)
+        self.assertIn("remaining_skill_gaps", summary)
+        self.assertIn("missing", summary["remaining_skill_gaps"])
+        self.assertIn("weak", summary["remaining_skill_gaps"])
+
+        # 3. ATS alignment
+        self.assertIn("ats_alignment", summary)
+        self.assertIn("alignment_level", summary["ats_alignment"])
+
+        # 4. Study timeline
+        self.assertIn("study_timeline", summary)
+        self.assertEqual(summary["study_timeline"]["hours_per_week"], 10)
+        self.assertGreater(summary["study_timeline"]["estimated_total_hours"], 0)
+        self.assertGreater(summary["study_timeline"]["estimated_weeks"], 0)
+
+        # 5. Portfolio recommendations
+        self.assertIn("portfolio_recommendations", summary)
+        self.assertIsInstance(summary["portfolio_recommendations"], list)
+        self.assertGreater(len(summary["portfolio_recommendations"]), 0)
+
+        # 6. Market outlook
+        self.assertIn("market_outlook", summary)
+        self.assertIn("demand_level", summary["market_outlook"])
+        self.assertIn("salary_bands", summary["market_outlook"])
+
+        # 7. Placement summary
+        self.assertIn("placement_summary", summary)
+        self.assertIn("tier", summary["placement_summary"])
+        self.assertIn("verdict", summary["placement_summary"])
+        self.assertIn("action_plan", summary["placement_summary"])
+
+    def test_service_study_intensity_variations(self):
+        """Service Test: verify 5 vs 20 hrs/week intensity alters timeline weeks."""
+        summary_5 = ReadinessSummaryService.generate_readiness_summary(career_id=1, hours_per_week=5)
+        summary_20 = ReadinessSummaryService.generate_readiness_summary(career_id=1, hours_per_week=20)
+        self.assertEqual(summary_5["study_timeline"]["hours_per_week"], 5)
+        self.assertEqual(summary_20["study_timeline"]["hours_per_week"], 20)
+        self.assertGreater(summary_5["study_timeline"]["estimated_weeks"], summary_20["study_timeline"]["estimated_weeks"])
+
+    def test_service_with_resume_text_ats_scoring(self):
+        """Service Test: providing resume_text calculates live ATS score."""
+        resume = "Software developer proficient in Python, SQL, and Git version control."
+        summary = ReadinessSummaryService.generate_readiness_summary(
+            career_id=1,
+            hours_per_week=10,
+            resume_text=resume
+        )
+        self.assertTrue(summary["ats_alignment"]["is_scored"])
+        self.assertGreater(summary["ats_alignment"]["ats_score"], 0)
+        self.assertIn("Python", summary["ats_alignment"]["matched_keywords"])
+
+    def test_service_invalid_hours_raises_error(self):
+        """Service Test: invalid study intensity raises ValueError."""
+        with self.assertRaises(ValueError):
+            ReadinessSummaryService.generate_readiness_summary(career_id=1, hours_per_week=7)
+
+    def test_service_invalid_career_returns_none(self):
+        """Service Test: non-existent career returns None."""
+        summary = ReadinessSummaryService.generate_readiness_summary(career_id=999999)
+        self.assertIsNone(summary)
+
+    def test_api_readiness_summary_get_200(self):
+        """API Test: GET /api/careers/1/readiness-summary returns HTTP 200 with all required sections."""
+        resp = self.client.get("/api/careers/1/readiness-summary", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["career_id"], 1)
+        self.assertIn("overall_readiness", data)
+        self.assertIn("placement_summary", data)
+        self.assertIn("study_timeline", data)
+        self.assertIn("market_outlook", data)
+        self.assertIn("portfolio_recommendations", data)
+
+    def test_api_readiness_summary_intensity_param(self):
+        """API Test: GET /api/careers/1/readiness-summary?hours_per_week=20 returns 20 hrs timeline."""
+        resp = self.client.get("/api/careers/1/readiness-summary?hours_per_week=20", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["study_timeline"]["hours_per_week"], 20)
+
+    def test_api_readiness_summary_invalid_intensity_400(self):
+        """API Test: invalid hours_per_week returns HTTP 400 Bad Request."""
+        resp = self.client.get("/api/careers/1/readiness-summary?hours_per_week=15", headers=self.headers)
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "error")
+
+    def test_api_readiness_summary_post_with_resume(self):
+        """API Test: POST /api/careers/1/readiness-summary with resume_text calculates ATS score."""
+        payload = {
+            "hours_per_week": 10,
+            "resume_text": "Experienced Python engineer with SQL and Git knowledge"
+        }
+        resp = self.client.post("/api/careers/1/readiness-summary", json=payload, headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["ats_alignment"]["is_scored"])
+        self.assertIn("Python", data["ats_alignment"]["matched_keywords"])
+
+    def test_api_readiness_summary_invalid_career_404(self):
+        """API Test: non-existent career returns HTTP 404 Not Found."""
+        resp = self.client.get("/api/careers/999999/readiness-summary", headers=self.headers)
+        self.assertEqual(resp.status_code, 404)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "error")
+
+    def test_api_protected_endpoints_backward_compatibility(self):
+        """Backward Compatibility: existing career endpoints remain intact."""
+        # 1. Skill gap endpoint
+        resp_gap = self.client.get("/api/careers/1/skill-gap", headers=self.headers)
+        self.assertEqual(resp_gap.status_code, 200)
+
+        # 2. Roadmap endpoint
+        resp_road = self.client.get("/api/careers/1/roadmap", headers=self.headers)
+        self.assertEqual(resp_road.status_code, 200)
+
+        # 3. Analytics endpoint
+        resp_ana = self.client.get("/api/careers/1/analytics", headers=self.headers)
+        self.assertEqual(resp_ana.status_code, 200)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
