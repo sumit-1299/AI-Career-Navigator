@@ -22,5 +22,12 @@ class Career(db.Model):
         nullable=True
     )
 
+    skills = db.relationship(
+        "CareerSkill",
+        backref="career",
+        lazy="select",
+        cascade="all, delete-orphan"
+    )
+
     def __repr__(self):
         return f"<Career {self.title}>"

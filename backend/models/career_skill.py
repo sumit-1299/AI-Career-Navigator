@@ -12,6 +12,12 @@ class CareerSkill(db.Model):
         nullable=False
     )
 
+    canonical_skill_id = db.Column(
+        db.Integer,
+        db.ForeignKey("canonical_skills.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
     skill_name = db.Column(
         db.String(100),
         nullable=False
@@ -26,6 +32,11 @@ class CareerSkill(db.Model):
         db.Integer,
         nullable=False,
         default=1
+    )
+
+    canonical_skill = db.relationship(
+        "CanonicalSkill",
+        back_populates="career_skills"
     )
 
     def __repr__(self):

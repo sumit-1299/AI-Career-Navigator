@@ -28,3 +28,13 @@ class User(db.Model):
         uselist=False,
         cascade="all, delete-orphan"
     )
+
+    skills = db.relationship(
+        "Skill",
+        backref="user",
+        lazy="select",
+        cascade="all, delete-orphan"
+    )
+
+    def __repr__(self):
+        return f"<User {self.email}>"
