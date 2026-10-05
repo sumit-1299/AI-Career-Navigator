@@ -29,8 +29,7 @@ function fetchDate(value) {
 }
 
 function boardMarkup(board) {
-  const live =
-    board.available && board.status === "live";
+  const live = board.available && board.status === "live";
 
   return `
     <article class="panel job-board">
@@ -526,6 +525,25 @@ async function submitLiveComparison(values) {
 }
 
 async function handleJobsAction(action, button) {
+  /*
+   * This is the important navigation fix.
+   *
+   * Previously the "jobs" action reached this function but had no
+   * branch here, so the live-job API could return 200 while the
+   * workspace remained on the Overview screen.
+   */
+  if (action === "jobs") {
+    state.selectedJob = null;
+    state.jobCompareDraft = null;
+    state.view = "jobs";
+
+    await loadJobs(state.jobFilters);
+
+    renderShell();
+    focusContent();
+    return;
+  }
+
   if (action === "open-job") {
     await openLiveJob(
       button.dataset.board,
