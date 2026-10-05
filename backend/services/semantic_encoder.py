@@ -7,6 +7,10 @@ import os
 from pathlib import Path
 from threading import RLock
 
+# The official runtime opt-out must be set before ONNX Runtime initializes.
+# The application performs local inference and does not opt candidates into telemetry.
+os.environ["ORT_DISABLE_TELEMETRY"] = "1"
+
 MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 MODEL_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
 FILES = {
@@ -45,6 +49,7 @@ class MiniLMEncoder:
         try:
             import numpy as np
             import onnxruntime as ort
+            ort.disable_telemetry_events()
             from tokenizers import Tokenizer
             for name, expected in FILES.items():
                 if file_digest(directory / name) != expected["sha256"]:

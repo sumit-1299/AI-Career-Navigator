@@ -18,7 +18,7 @@ tables do not require a schema alteration.
 
 Open http://127.0.0.1:5000/app and press Ctrl+F5 to load the updated scripts.
 
-1. Sign in and open **Live jobs**.
+1. Sign in, save a reviewed resume under **Resume & skills**, and open **Live opportunities**.
 2. Click **Refresh Canonical**, then **Refresh Razorpay**. Each refresh requests
    that employer's current public board and stores the successfully parsed list.
 3. Search for `Python` and optionally filter the location with `APAC` or
@@ -31,15 +31,18 @@ Open http://127.0.0.1:5000/app and press Ctrl+F5 to load the updated scripts.
    The server saves the full extracted posting text, provenance and current
    candidate records, then displays the existing evidence-aware comparison.
 6. Expand **Source and comparison method** to inspect source details. Saved
-   comparisons remain available under **Compare a job**, including after a job
+   comparisons remain available under **Job alignment**, including after a job
    changes or disappears from a board.
 7. **Try keyword baseline** reopens the current cached posting with keyword mode
    selected. Review and save it. This action uses the current candidate profile
    and posting version; it is not a controlled evaluation on frozen identical
    inputs. Use the future evaluation harness for that experiment.
 
-Semantic matching still covers ten curated backend skill concepts. SQL is the
-only available diagnostic. Project/certificate entries remain unverified claims.
+Semantic matching covers ten curated backend skill concepts. SQL, Python and
+REST/HTTP diagnostics are available. Resume mentions and project/certificate
+entries remain unverified claims. The alignment table shows these sources
+alongside self-ratings and diagnostic answer counts. A missing resume mention is
+not proof of missing proficiency; no years/location/qualification fit is inferred.
 There is no overall suitability ranking, proficiency score, or hiring probability.
 Listings are alphabetical; keyword/location filters do not establish eligibility.
 

@@ -1,0 +1,1549 @@
+diff --git a/docs/EXPERT_REVIEW_PLAN.md b/docs/EXPERT_REVIEW_PLAN.md
+index bb8cf57..cc39701 100644
+--- a/docs/EXPERT_REVIEW_PLAN.md
++++ b/docs/EXPERT_REVIEW_PLAN.md
+@@ -1,13 +1,17 @@
+ # Expert review plan — Saturday 3 October 2026
+ 
+-Plan updated 29 September 2026. Target: a coherent, reproducible research prototype
++Plan updated 30 September 2026. Target: a coherent, reproducible research prototype
+ and an honest preliminary evaluation. Keep extending the existing repository and
+ credit the original team contribution. Do not restart the project.
+ 
++The focused literature comparison, precise claim boundaries and study forms are now
++available in [research/START_HERE.md](research/START_HERE.md). They remain drafts
++pending human review and collection; do not mark the evaluation complete.
++
+ ## Central research question
+ 
+ **Does assessment evidence, with explicit treatment of missing evidence, improve
+-job-specific learning recommendations compared with self-reported skills alone?**
++job-linked learning recommendations compared with self-reported skills alone?**
+ 
+ This is a proposed question, not an established novelty claim. Semantic skill
+ extraction already has substantial prior work; for example,
+@@ -39,7 +43,7 @@ eligibility, employability or comprehensive skill coverage.
+ | Work | Concrete output | Completion condition |
+ | --- | --- | --- |
+ | Question/content review | Human review of each item, answer, ambiguity and topic coverage | Record reviewer, date, issue and resolution; version any later bank change |
+-| Literature comparison | 6–10 closely relevant primary studies/systems, with citations | Compare evidence sources, uncertainty, live-job use, recommendations and evaluation; state a bounded gap |
++| Literature source check | Eight-work comparison drafted in `research/LITERATURE_MATRIX.md` | Verify reading limits and metadata, inspect remaining full texts and refine the bounded contribution |
+ | Independent extraction pilot | Original frozen text, independent reviews and adjudication | Use genuinely independent reviewers; preserve disagreements and evaluate held-out data only after decisions are fixed |
+ | Recommendation pilot | Prespecified protocol, candidate cases and expert ratings | Test whether evidence changes the appropriateness of recommended actions; report the sample and limits |
+ | Review documents | Project report, paper draft and short slide deck | Methods match implementation; distinguish observations, preliminary results and planned work |
+@@ -98,8 +102,7 @@ and present the result as independent validation or a new foundation model.
+ 
+ | Date | Deliverable |
+ | --- | --- |
+-| Tue 29 Sep | Install and check the integrated multi-skill batch; distribute content/literature work within the team; fix the study protocol |
+-| Wed 30 Sep | Content review, bounded literature matrix, frozen prototype and start independent annotation/pilot |
++| Wed 30 Sep | Install research batch; settle roles, content/source review and freeze study inputs before independent annotation/pilot; begin report methods |
+ | Thu 1 Oct | Finish feasible pilot runs, analyse errors and document limitations; preserve incomplete results honestly |
+ | Fri 2 Oct | Feature freeze; finish report/paper draft/slides; rehearse demo and record backup |
+ | Sat 3 Oct | Show the system, available evidence and precisely scoped research question; obtain expert feedback |
+diff --git a/docs/PROJECT_STATUS.md b/docs/PROJECT_STATUS.md
+index 8afbc6b..fe63ce6 100644
+--- a/docs/PROJECT_STATUS.md
++++ b/docs/PROJECT_STATUS.md
+@@ -1,6 +1,6 @@
+ # AI Career Navigator — implementation and research status
+ 
+-Updated 29 September 2026. This file distinguishes working functionality from
++Updated 30 September 2026. This file distinguishes working functionality from
+ planned research claims. See [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for the broader
+ product vision; not every part of that vision is implemented.
+ 
+@@ -13,7 +13,7 @@ product vision; not every part of that vision is implemented.
+ | Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions; latest submitted SQL/Python/REST evidence per skill and context review | Rules and thresholds need independent validation; no overall hiring probability, suitability rank or proficiency score |
+ | Live jobs | Selected Canonical/Razorpay boards, cached freshness, filtering and versioned comparison snapshots | Limited employer coverage, manual refresh, no market-wide feed |
+ | Evaluation tools | Frozen job exporter, independent annotation page, adjudication, paired extraction metrics and a separate AI-draft development diagnostic | Human validation remains pending; agreement with an AI draft is preliminary and cannot establish accuracy |
+-| Research contribution | Candidate evidence, uncertainty and source snapshots form the proposed approach | Literature gap/novelty and added decision value are not established by working features alone |
++| Research contribution | Evidence distinctions and source snapshots implemented; focused eight-work literature matrix and two-part pilot protocol drafted | Close prior-work overlap exists; novelty and recommendation benefit remain unproven; human source/content review and data collection pending |
+ | Training | Pretrained model used for inference | No project-specific supervised training or fine-tuning completed |
+ 
+ The next research task is documented in
+@@ -47,6 +47,9 @@ are not yet a fully integrated recommendation model or labelled training dataset
+ 
+ The next delivery sequence and study priorities are in [EXPERT_REVIEW_PLAN.md](EXPERT_REVIEW_PLAN.md).
+ 
++The research preparation batch starts at [research/START_HERE.md](research/START_HERE.md).
++It contains blank forms and a proposed protocol, not new study results.
++
+ ## Relevant implementation notes
+ 
+ - [MULTISKILL_ASSESSMENTS.md](MULTISKILL_ASSESSMENTS.md)
+diff --git a/docs/RESEARCH_EVALUATION.md b/docs/RESEARCH_EVALUATION.md
+index 1b3951a..cc6e2ba 100644
+--- a/docs/RESEARCH_EVALUATION.md
++++ b/docs/RESEARCH_EVALUATION.md
+@@ -22,7 +22,9 @@ roadmap outcomes, or research novelty. These distinctions must remain in the pap
+ unknown/unverified states help reviewers make better skill-gap decisions than
+ self-reported profiles alone? That requires a separate evaluation with independently
+ reviewed candidate-task evidence and a predefined outcome. Do not claim that RQ1
+-answers RQ2. The existing six-question SQL diagnostic is still draft content.
++answers RQ2. The SQL, Python and REST/HTTP six-question diagnostics remain draft content.
++The separate [recommendation pilot protocol](research/PILOT_PROTOCOL.md) defines
++RQ2 controls, practical-task references, outcome rubrics and collection forms.
+ 
+ ## Team workflow
+ 
+diff --git a/docs/research/CONTENT_REVIEW_FORM.md b/docs/research/CONTENT_REVIEW_FORM.md
+new file mode 100644
+index 0000000..1720a48
+--- /dev/null
++++ b/docs/research/CONTENT_REVIEW_FORM.md
+@@ -0,0 +1,506 @@
++# Diagnostic content review form
++
++Prepared 29 September 2026 from the question snapshots in application commit `272efb0`.
++**All decisions below are pending. No human review has been completed by this form.**
++
++Copy this form into `data/research/study-v1/` before entering reviewer details.
++This answer-key packet is for content reviewers; do not show it to study participants.
++It is not a saved-review JSON file and cannot be imported into the annotation page.
++
++## Reviewer record
++
++- Reviewer ID / relevant expertise: ____
++- Review date: ____
++- Developer or question-author conflict/exposure: ____
++- Resources and practical tasks reviewed separately: pending
++
++For each item, check answer correctness, unique best answer under stated assumptions,
++wording/ambiguity, topic relevance, plausible distractors and accessibility.
++Review both items per topic for duplication and breadth. Check resource relevance
++using [MULTISKILL_ASSESSMENTS.md](../MULTISKILL_ASSESSMENTS.md).
++
++Decisions: accept / revise / reject. Sign-off checks content; it does not validate
++proficiency measurement. Later item/rubric changes require a new bank version.
++Retain the old snapshots and freeze the reviewed bank before participant sessions.
++
++## SQL foundations diagnostic
++
++Bank: `sql-foundations-v1` · Review status: `draft_pending_human_review`
++
++### sql-filter-1
++
++Topic: `filtering`
++
++```text
++Which clause filters individual rows before grouping?
++```
++
++- **A** — HAVING
++- **B** — WHERE
++- **C** — ORDER BY
++- **D** — GROUP BY
++
++**Proposed key:** B
++
++**Proposed explanation:** WHERE filters input rows; HAVING filters groups after grouping.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### sql-filter-2
++
++Topic: `filtering`
++
++```text
++Which condition selects rows whose email column is SQL NULL?
++```
++
++- **A** — email = NULL
++- **B** — email = ''
++- **C** — email IS NULL
++- **D** — email = 'NULL'
++
++**Proposed key:** C
++
++**Proposed explanation:** IS NULL tests for a missing SQL value. NULL is not an empty string.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### sql-join-1
++
++Topic: `joins`
++
++```text
++customers has exactly two rows with id 1 and 2. orders has exactly two rows, both with customer_id 1. How many rows does this return? SELECT c.id FROM customers c INNER JOIN orders o ON o.customer_id = c.id;
++```
++
++- **A** — 1
++- **B** — 3
++- **C** — 4
++- **D** — 2
++
++**Proposed key:** D
++
++**Proposed explanation:** Customer 1 produces one row per matching order; customer 2 has no match.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### sql-join-2
++
++Topic: `joins`
++
++```text
++customers has exactly two rows with id 1 and 2. orders has exactly two rows, both with customer_id 1. How many rows does this return? SELECT c.id FROM customers c LEFT JOIN orders o ON o.customer_id = c.id;
++```
++
++- **A** — 3
++- **B** — 2
++- **C** — 1
++- **D** — 4
++
++**Proposed key:** A
++
++**Proposed explanation:** Two rows match customer 1. LEFT JOIN also retains customer 2 as one row.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### sql-aggregate-1
++
++Topic: `aggregation`
++
++```text
++Complete the query so it returns only customers with at least two orders: SELECT customer_id, COUNT(*) FROM orders GROUP BY customer_id ...;
++```
++
++- **A** — WHERE COUNT(*) >= 2
++- **B** — HAVING COUNT(*) >= 2
++- **C** — ORDER BY COUNT(*) >= 2
++- **D** — LIMIT 2
++
++**Proposed key:** B
++
++**Proposed explanation:** HAVING applies a condition to each group and can use its aggregate count.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### sql-aggregate-2
++
++Topic: `aggregation`
++
++```text
++A table contains exactly three rows with amount values 10, NULL and 20. What does SELECT COUNT(amount) FROM payments return?
++```
++
++- **A** — 3
++- **B** — 30
++- **C** — 2
++- **D** — NULL
++
++**Proposed key:** C
++
++**Proposed explanation:** COUNT(amount) counts non-NULL values; COUNT(*) would count all three rows.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++## Python foundations diagnostic
++
++Bank: `python-foundations-v1` · Review status: `draft_pending_human_review`
++
++### python-functions-1
++
++Topic: `functions`
++
++```text
++A Python function reaches its end without executing a return statement. What value does the call return?
++```
++
++- **A** — 0
++- **B** — None
++- **C** — An empty string
++- **D** — The last local variable
++
++**Proposed key:** B
++
++**Proposed explanation:** Falling off the end of a Python function returns None. Printing a value does not return it.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### python-functions-2
++
++Topic: `functions`
++
++```text
++What does this Python code print?
++def total(price, quantity=2):
++    return price * quantity
++print(total(4, quantity=3))
++```
++
++- **A** — 12
++- **B** — 8
++- **C** — 7
++- **D** — It raises TypeError
++
++**Proposed key:** A
++
++**Proposed explanation:** The explicit quantity=3 overrides the default of 2; 4 multiplied by 3 is 12.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### python-collections-1
++
++Topic: `collections`
++
++```text
++What does this Python code print?
++values = [3, 5]
++alias = values
++alias.append(8)
++print(len(values))
++```
++
++- **A** — 2
++- **B** — 8
++- **C** — 1
++- **D** — 3
++
++**Proposed key:** D
++
++**Proposed explanation:** Assignment makes alias refer to the same list. Appending through alias changes that list.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### python-collections-2
++
++Topic: `collections`
++
++```text
++What does this Python code print?
++counts = {'ready': 2}
++print(counts.get('waiting', 0))
++```
++
++- **A** — 2
++- **B** — None
++- **C** — 0
++- **D** — It raises KeyError
++
++**Proposed key:** C
++
++**Proposed explanation:** dict.get returns the supplied default when the key is absent, without adding the key.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### python-exceptions-1
++
++Topic: `exceptions`
++
++```text
++Which exception does int('pear') raise in Python?
++```
++
++- **A** — KeyError
++- **B** — ValueError
++- **C** — IndexError
++- **D** — It returns 0
++
++**Proposed key:** B
++
++**Proposed explanation:** The string has the right input type for int but does not represent an integer, so conversion raises ValueError.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### python-exceptions-2
++
++Topic: `exceptions`
++
++```text
++In normal Python execution, which block is used for cleanup whether the associated try block succeeds or raises an exception?
++```
++
++- **A** — else only
++- **B** — except ValueError only
++- **C** — A new unrelated try block
++- **D** — finally
++
++**Proposed key:** D
++
++**Proposed explanation:** A finally block runs as control leaves the try statement, including normal completion and exception propagation.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++## REST API HTTP foundations diagnostic
++
++Bank: `rest-http-foundations-v1` · Review status: `draft_pending_human_review`
++
++### rest-methods-1
++
++Topic: `http_methods`
++
++```text
++An HTTP API provides /books/42. Which method is intended to retrieve the book representation without requesting a state change?
++```
++
++- **A** — GET
++- **B** — POST
++- **C** — DELETE
++- **D** — PATCH
++
++**Proposed key:** A
++
++**Proposed explanation:** GET requests a representation and is defined as safe; incidental effects such as server logging can still occur.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### rest-methods-2
++
++Topic: `http_methods`
++
++```text
++For an HTTP API that follows standard method semantics, what does it mean that PUT is idempotent?
++```
++
++- **A** — PUT cannot change server state
++- **B** — Every response must be identical
++- **C** — Repeating the identical request has the same intended server effect as sending it once
++- **D** — PUT never needs authentication
++
++**Proposed key:** C
++
++**Proposed explanation:** Idempotence concerns the intended effect on the server, not identical response codes, logs or authentication requirements.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### rest-status-1
++
++Topic: `status_codes`
++
++```text
++A POST request successfully creates a new resource. Which HTTP status specifically communicates that creation?
++```
++
++- **A** — 404
++- **B** — 201
++- **C** — 204
++- **D** — 500
++
++**Proposed key:** B
++
++**Proposed explanation:** 201 Created reports successful creation. 204 means success without response content, not specifically creation.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### rest-status-2
++
++Topic: `status_codes`
++
++```text
++An API documents that authenticated callers receive 404 when a requested item does not exist. Which response should GET /items/999 return when that item is absent?
++```
++
++- **A** — 500
++- **B** — 201
++- **C** — 301
++- **D** — 404
++
++**Proposed key:** D
++
++**Proposed explanation:** Under the stated contract, 404 reports that the requested item was not found; its absence alone is not an internal server failure.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### rest-representations-1
++
++Topic: `representations`
++
++```text
++A client sends a JSON request body. Which request header declares the media type of that body?
++```
++
++- **A** — Content-Type: application/json
++- **B** — Accept: application/json
++- **C** — Location: application/json
++- **D** — Authorization: application/json
++
++**Proposed key:** A
++
++**Proposed explanation:** Content-Type describes the representation being sent. Accept states preferences for response media types.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++### rest-representations-2
++
++Topic: `representations`
++
++```text
++A JSON-only API returns HTTP 204 No Content after a successful deletion. How should the client handle the response body?
++```
++
++- **A** — Require a JSON object with deleted=true
++- **B** — Parse an empty body as JSON null
++- **C** — Treat the request as successful without parsing a JSON body
++- **D** — Retry until a body appears
++
++**Proposed key:** C
++
++**Proposed explanation:** A 204 response has no content. Success does not require a JSON body, and parsing an empty body as JSON would fail.
++
++| Check | Human response |
++| --- | --- |
++| Key correct; independently checked against reference | pending |
++| One best answer; assumptions/wording clear | pending |
++| Topic coverage and distractor quality | pending |
++| Accept / revise / reject | pending |
++| Correction, reference and reviewer rationale | |
++
++## Bank-level decision
++
++| Skill | Coverage adequate for the stated limited diagnostic? | Resources/tasks checked? | Decision / reviewer / date |
++| --- | --- | --- | --- |
++| SQL | pending | pending | pending |
++| Python | pending | pending | pending |
++| REST/HTTP | pending | pending | pending |
++
++No statement of calibrated proficiency, learning gains or job readiness follows
++from this review. Preserve unresolved issues in the study limitations.
+diff --git a/docs/research/LITERATURE_MATRIX.md b/docs/research/LITERATURE_MATRIX.md
+new file mode 100644
+index 0000000..6960c82
+--- /dev/null
++++ b/docs/research/LITERATURE_MATRIX.md
+@@ -0,0 +1,73 @@
++# Focused literature comparison
++
++Search date: **29 September 2026**. Status: AI-assisted research preparation,
++awaiting a team member's source check. This is a focused scoping comparison, not a
++systematic review, an exhaustive patent search or proof of first-ever novelty.
++
++## Main finding
++
++Skill extraction, semantic job matching, assessment-informed recommendations,
++knowledge graphs, learning paths and externally sourced jobs already appear in
++prior work. R7 describes a particularly close combination of quizzes, learning
++roadmaps, project activity and live job retrieval. The proposed study must evaluate
++a specific decision policy rather than claim that assembling these features is new.
++
++Our narrower question concerns the consequences of treating **missing assessment
++evidence separately from observed errors**, while retaining the source records
++behind each recommendation. The search has not established that this distinction
++is absent from all earlier systems. It is a candidate contribution to investigate.
++
++## Comparison matrix
++
++“Not established” means the inspected material did not substantiate that point;
++it does not mean the authors' system definitely lacks it. Results from different
++tasks, datasets and metrics cannot be ranked against our pilot's F1.
++
++| ID / work | Inputs and reported approach | Assessment, learning and uncertainty | Evaluation / reading limits | Consequence for our project |
++| --- | --- | --- | --- | --- |
++| R1 — Sentence-BERT, Reimers & Gurevych (2019) | Sentence representations for efficient semantic similarity using cosine similarity. | A representation method, not a candidate-testing or roadmap system. | Official abstract and metadata inspected; similarity/transfer benchmarks. | Cite the methodological foundation. A pretrained sentence encoder is not our new algorithm. |
++| R2 — SkillSpan, Zhang et al. (2022) | Expert-annotated hard/soft skill spans in job postings, with extraction baselines. | Job text annotation; candidate diagnostic evidence and course decisions are outside the described task. | Official abstract and author dataset description inspected. Span extraction differs from our ten-concept, whole-job labels. | Skill extraction is established. Do not compare its span metrics directly with our job-skill-cell metrics. |
++| R3 — Extreme Multi-Label Skill Extraction, Decorte et al. (2023) | Synthetic labelled training examples and contrastive learning link literal/implicit job skills to an ontology. | Training-label generation; independent assessment of candidate proficiency is not established by this source. | Abstract and author benchmark repository inspected; benchmark extraction evaluation reported. | Synthetic training data can be a method, but agreeing with AI-generated evaluation labels does not establish our model's accuracy. |
++| R4 — JobEdKG, Fettach et al. (2024) | Job/course information in an uncertain knowledge graph supports skill-demand prediction and course selection. | Uncertainty concerns graph facts; it should not be equated with our skipped-question state. | Publisher-indexed abstract/description and author repository inspected; full publisher text was inaccessible. | External job data, course links and uncertainty already overlap. Candidate-test handling requires full-text verification before an absence claim. |
++| R5 — Psychometric course recommender, Pinos Ullauri et al. (2025) | Tutor-assessed soft skills and course histories drive model-based course-set optimisation. | Direct evidence-informed learning recommendations; different skill domain and timescale. | Full Methods and Limitations inspected. Tutor assessments cover three cohorts; the paper discloses that its test subset is also in the training data. | We cannot claim assessment-informed course recommendation is new. Keep our evaluation independent and distinguish predicted benefit from observed learning gains. |
++| R6 — CareerPathKG, Le et al. (2026) | Taxonomies, CVs and job descriptions support graph-based matching and career guidance. | “CV assessment” scores document suitability; the inspected method is not a candidate knowledge test. | PDF §§3.2–4 inspected; expert-rated CV/guidance evaluation and retrieval evaluation are reported. | Structured explanations and job-informed career advice overlap. Our evaluation target is a topic-level learning action, not a CV score or job ranking. |
++| R7 — GenAI Skill Analyser, Vardhan et al. (2026) | Describes multi-source profiles, adaptive quizzes, staged roadmaps, projects, follow-up tests and Adzuna job retrieval. | Strong feature-level overlap with the original project vision. Treatment of unanswered items as a separate recommendation state is not established in inspected sections. | PDF abstract, implementation and conclusion inspected. The inspected results section gives qualitative claims without a reproducible comparative sample/metric account. Treat reported features separately from demonstrated effectiveness. | Avoid “first platform combining assessment, learning and live jobs.” Cite this overlap and test the narrower policy explicitly. |
++| R8 — Multilingual skill matching, Kavas et al. (2025) | Skills from vacancies and candidate experiences are aligned to ESCO and a multilingual knowledge graph. | Candidate experience descriptions provide text evidence; quiz-based proficiency verification is not established in the inspected abstract. | Official abstract and bibliographic record inspected; numerical results/full methods not audited. | ESCO normalisation, embeddings and candidate/job alignment are existing approaches. Our English-only prototype has a much narrower vocabulary. |
++
++## How we searched and screened
++
++Discovery queries included `"skill gap" "course recommendation" paper`,
++`"career" "assessment" "learning path" recommender research`,
++`"job recommendation" "uncertainty" skills evidence paper`, and exact-title
++lookups for SkillSpan, JobEdKG and the assessment/roadmap system. Two search
++engines were used, followed by primary publisher, proceedings and author pages.
++Some searches expanded the wording; irrelevant results were discarded.
++
++Included: directly overlapping career/learning systems and the extraction/embedding
++methods needed to distinguish dependency from contribution. Excluded: generic
++career advice, commercial marketing claims used as research results, and reviews
++used as substitutes for inspecting primary work. Search coverage is incomplete,
++especially for paywalled works, products and non-English research.
++
++This matrix is not a head-to-head benchmark. R1–R3 concern methods/data; R4–R8
++concern adjacent or overlapping systems. The proposed simple study baselines are
++researcher-defined controls, not reproductions of these papers.
++
++## Sources and inspection notes
++
++- **R1** [Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks](https://aclanthology.org/D19-1410/), EMNLP-IJCNLP 2019, DOI `10.18653/v1/D19-1410`.
++- **R2** [SkillSpan: Hard and Soft Skill Extraction from English Job Postings](https://aclanthology.org/2022.naacl-main.366/), NAACL 2022, DOI `10.18653/v1/2022.naacl-main.366`; [author repository](https://github.com/kris927b/SkillSpan).
++- **R3** [Extreme Multi-Label Skill Extraction Training using Large Language Models](https://arxiv.org/abs/2307.10778), 2023; [author benchmark repository](https://github.com/jensjorisdecorte/Skill-Extraction-benchmark). Repository distinguishes TECH/HOUSE span labels from TECHWOLF sentence labels and specifies ESCO 1.1.0.
++- **R4** [JobEdKG](https://doi.org/10.1016/j.engappai.2023.107779), *Engineering Applications of Artificial Intelligence* 131, article 107779, 2024; [author repository](https://github.com/BahajAdil/JobEd). Publication year is 2024 despite the DOI containing 2023.
++- **R5** [A Recommender System of Postgraduate Courses Based on Soft Skills: A Psychometric-inspired Approach](https://link.springer.com/article/10.1007/s40593-025-00463-z), *International Journal of Artificial Intelligence in Education* 35, 2117–2153, 2025. Inspect Methods → Data / Training and Test sets, and Discussion and Limitations.
++- **R6** [CareerPathKG: Knowledge Graph Integrated Framework for Career Intelligence](https://aclanthology.org/2026.eacl-industry.60/), EACL Industry Track 2026, DOI `10.18653/v1/2026.eacl-industry.60`; [PDF](https://aclanthology.org/2026.eacl-industry.60.pdf). PDF and landing-page author order differ; the bibliography here follows the PDF title page.
++- **R7** [Publisher record](https://ijcrt.org/viewfull.php?paper=IJCRT2604855) and [paper PDF](https://www.ijcrt.org/papers/IJCRT2604855.pdf), IJCRT 14(4), h311–h321, April 2026. The record title includes “Gap”; the PDF title omits it and lists an additional author, Mrs. Ramana. Bibliography follows the PDF; verify metadata before final submission. Citation acknowledges overlap, not independent verification of its effectiveness or references.
++- **R8** [Multilingual Skill Extraction for Job Vacancy–Job Seeker Matching in Knowledge Graphs](https://aclanthology.org/2025.genaik-1.15/), GenAIK 2025, pp. 146–155.
++
++## Team source-check tasks
++
++Check the full text of R3, R4 and R8 before describing what their systems lack.
++Confirm R6/R7 bibliography discrepancies. Extend the search specifically for
++abstention, missing evidence, diagnostic testing and uncertainty in educational
++recommendation. Record contrary findings as well as supporting ones. The existence
++of an overlapping prior method would change our positioning, not justify hiding it.
+diff --git a/docs/research/PILOT_FORMS.md b/docs/research/PILOT_FORMS.md
+new file mode 100644
+index 0000000..1790329
+--- /dev/null
++++ b/docs/research/PILOT_FORMS.md
+@@ -0,0 +1,156 @@
++# Pilot record forms
++
++Copy each relevant blank form into **`data/research/study-v1/`** before filling it.
++The templates in this public repository must remain blank. Real participants,
++ratings and consent records are not supplied by this batch.
++
++These are study notes. **Do not upload them into the app or “Resume a saved review”.**
++The job-annotation page accepts its own packet/review JSON format only. The RQ1
++command-line evaluator does not analyse the RQ2 forms below.
++
++## A. Practical-task content review — before sessions
++
++| Field | Value to record |
++| --- | --- |
++| Task ID and version | |
++| Skill and three topic IDs | |
++| Author ID / relevant expertise | |
++| Independent content checker ID / expertise | |
++| Prompt, data and environment assumptions | Save exact versioned task separately |
++| Criteria and acceptable solutions per topic | Save privately before sessions |
++| Enough evidence for each topic? | pending |
++| Distinct from the published MCQ and roadmap exercises? | pending |
++| Ambiguities, acceptable alternate solutions and corrections | |
++| Review decision / date | pending |
++| Freeze hash and private file path | |
++
++Do not use the diagnostic outcome as the practical-task rubric. If a question is
++ambiguous, resolve it before data collection or classify the affected reference
++as insufficient with a recorded task-design reason.
++
++## B. Participant session record — one per person
++
++| Field | Value to record |
++| --- | --- |
++| Participant ID | |
++| Session date/time and timezone | |
++| Voluntary participation recorded privately | pending |
++| Developer/team member? Prior exposure to questions or system? | |
++| Target skill / three topics | |
++| Frozen job ID, source URL, text hash and snapshot path | |
++| Reviewer-confirmed skill requirement and supporting passage | |
++| Self-rating before tasks (integer 1–10 or missing) | |
++| Fresh practical-task ID/version | |
++| Original response path and hash | |
++| Assistance, interruption, accommodation or technical issues | |
++| App assessment attempt ID / bank version / scoring version | |
++| Original assessment result snapshot path | |
++| Prior/repeated attempt? | |
++| Withdrawal or exclusion and reason, if any | |
++
++Record practical work before the MCQ feedback is shown. Keep the full practical
++response available to reference raters but withhold self-ratings and MCQ outputs.
++Use one first-exposure attempt in the primary pilot; report exceptions separately.
++
++## C. Independent practical-response reference — separate copy per rater
++
++Reviewer ID: ____  Relevant expertise: ____  Date: ____
++Case/participant ID: ____  Task ID/version: ____
++
++Disclosure: I have / have not seen this person's self-rating, quiz score, policy
++outputs or the other review. Describe any exposure: ____
++
++| Topic | Observable work / rubric criterion | Label | Reason for insufficient reference, if applicable |
++| --- | --- | --- | --- |
++| Topic 1 | | pending | |
++| Topic 2 | | pending | |
++| Topic 3 | | pending | |
++
++Allowed labels: `practice_supported`, `no_targeted_practice_supported`,
++`insufficient_reference`. These refer to the sampled task only.
++
++Do not choose a label because it agrees with the application or AI-generated
++answers. Record the specific observable response and the frozen criterion.
++
++## D. Reference reconciliation — preserve both originals
++
++| Topic | Rater 1 label | Rater 2 label | Agreed? | Final reference | Resolver ID / rationale |
++| --- | --- | --- | --- | --- | --- |
++| Topic 1 | pending | pending | pending | pending | |
++| Topic 2 | pending | pending | pending | pending | |
++| Topic 3 | pending | pending | pending | pending | |
++
++Resolve from the original practical response and frozen rubric before viewing
++condition outcomes. If evidence remains unresolved, use `insufficient_reference`
++and record `rater_disagreement`; do not force consensus to favour a method.
++Calculate agreement on original labels, not on the reconciled copy.
++
++## E. Condition actions and utility — coordinator plus a second checker
++
++Participant ID: ____  Frozen reference record: ____  Rule version:
++`career-pilot-protocol-v1`  Coordinator/checker IDs: ____ / ____
++
++| Topic | Pre-test rating | MCQ correct / wrong / skipped | B0 action | B1 action | B2 action | Independent reference |
++| --- | --- | --- | --- | --- | --- | --- |
++| Topic 1 | | | pending | pending | pending | pending |
++| Topic 2 | | | pending | pending | pending | pending |
++| Topic 3 | | | pending | pending | pending | pending |
++
++| Topic | B0 utility | B1 utility | B2 utility | Primary eligible? | Exclusion / mismatch note |
++| --- | --- | --- | --- | --- | --- |
++| Topic 1 | pending | pending | pending | pending | |
++| Topic 2 | pending | pending | pending | pending | |
++| Topic 3 | pending | pending | pending | pending | |
++
++Apply the exact rules and 0–2 utility table in [PILOT_PROTOCOL.md](PILOT_PROTOCOL.md).
++Primary eligibility requires paired condition data and a resolved practical
++reference. Keep insufficient-reference outcomes for the separate sensitivity table.
++The coordinator must retain the B2 app topic result and check that the action
++matches it; a discrepancy is a software/study issue to record and resolve.
++
++Participant-level mean B2−B0 over eligible topics: ____
++Participant-level mean B2−B1 over eligible topics: ____
++Eligible topic count: ____  Skipped-topic count: ____
++If no topic is eligible, enter N/A with its reason.
++
++## F. Optional usefulness feedback
++
++Keep actual method identities in a coordinator-only mapping. Rotate presentation:
++P01 B0/B1/B2, P02 B1/B2/B0, P03 B2/B0/B1, then repeat. Use neutral card labels
++1/2/3, the same layout, similar explanation length and the same available links.
++Record actual order. Names can be masked, but the content may reveal the condition;
++do not call this fully blinded. Raters of practical responses should not do this
++step before their independent references are frozen.
++
++| Field | Value |
++| --- | --- |
++| Participant ID / actual display order | |
++| Card 1 usefulness, 1–5 | pending |
++| Card 2 usefulness, 1–5 | pending |
++| Card 3 usefulness, 1–5 | pending |
++| Meaning: 1 = unusable; 3 = partly helpful; 5 = clearly helps choose the next action | |
++| Explanation was misleading or overstated skill? Quote the wording. | |
++| What action would you take next, and why? | |
++| Time to choose, if measured consistently | |
++
++Do not turn satisfaction into a proficiency, correctness or learning-gain result.
++
++## G. Results table skeleton — leave pending until measured
++
++| Outcome | B0 | B1 | B2 | Denominator / exclusions |
++| --- | --- | --- | --- | --- |
++| Mean participant utility on resolved references | pending | pending | pending | |
++| Practice on reference-adequate topics | pending | pending | pending | numerator / denominator |
++| No practice on reference-error topics | pending | pending | pending | numerator / denominator |
++| Evidence deferrals | pending | pending | pending | numerator / denominator |
++| Appropriate deferrals on insufficient references | pending | pending | pending | separate from primary |
++| Usefulness, if collected | pending | pending | pending | participants per condition |
++
++| Paired contrast | Actual participants | Mean | Median | Individual participant differences |
++| --- | --- | --- | --- | --- |
++| B2−B0 utility, primary | pending | pending | pending | |
++| B2−B1 utility, secondary | pending | pending | pending | |
++
++Always report missingness, actual participant counts, original rater agreement,
++exposure and deviations. Use N/A for zero denominators. Preserve negative and tied
++results. A blank table is not evidence that the study succeeded or failed.
+diff --git a/docs/research/PILOT_PROTOCOL.md b/docs/research/PILOT_PROTOCOL.md
+new file mode 100644
+index 0000000..1179512
+--- /dev/null
++++ b/docs/research/PILOT_PROTOCOL.md
+@@ -0,0 +1,297 @@
++# Pilot protocol — extraction and learning-action evaluation
++
++Version: **career-pilot-protocol-v1**. Written 29 September 2026.
++Status: **proposed; no new observations collected by this document**.
++Code baseline inspected: `272efb0`. Freeze the actual code commit and protocol
++before collecting outcomes; use [study_register.template.json](../../research/protocol/study_register.template.json).
++This is an internally prespecified exploratory pilot, not a registered trial or
++proof of effectiveness. Record deviations with dates and reasons.
++
++## 1. Scope and feasibility
++
++RQ1 evaluates ten job-skill concepts. RQ2 evaluates topic-level next actions for
++SQL, Python and REST/HTTP. Keep their cases, labels and results separate.
++
++Suggested feasibility targets, not statistically justified sample sizes:
++
++- RQ1: one frozen packet of 24 jobs, with the tool's 12 development / 12 test split;
++  two independent reviewers and adjudication if needed.
++- RQ2: six adult volunteers, preferably two per supported skill, one target skill
++  and its three topics per person. Two qualified raters review the task evidence.
++  More participants may be added only under a revised plan fixed before outcomes.
++- Complete the feasible observations by 1 October; prepare the review on 2 October.
++  If fewer cases are available, report the actual count and missing work. Do not
++  call this sample representative of students, employers or the labour market.
++
++A person must not act as two independent raters. Developer ratings must be labelled
++internal if independent review is unavailable. Team members used as participants
++must be identified as developers/exposed participants in the study record and
++reported separately; familiarity with the question bank is a major limitation.
++
++## 2. Freeze and record before scoring
++
++Record the protocol version, Git commit, dirty-file status, model identifier and
++revision, catalogue/question-bank versions, inclusion rule, intended sample size,
++reviewer IDs/qualifications, outcome definitions and exclusions. Keep real names
++and consent notes separately from public project files.
++
++All raw study records belong under the existing ignored `data/research/` folder.
++Keep blanks/templates and protocol in Git. Ignoring files is not encryption or an
++access-control system; avoid adding private study records to public commits.
++Use participant IDs such as P01. Collect only the information needed for the pilot.
++Participants should understand the prototype and voluntary nature of participation;
++results are not employment or academic grades. Follow the institution's applicable
++research process before recruitment. This document does not recruit anyone.
++
++Do not fill unknown values with zero, fabricate participants, reuse AI-draft labels
++as two human reviews, or change a failed/uncertain case merely to improve results.
++
++## 3. RQ1 — job-skill extraction
++
++### 3.1 Inputs and comparison
++
++Use the existing keyword/alias method and keyword-plus-MiniLM method with identical
++frozen job descriptions, vocabulary, context rules and empty candidate context.
++Record cosine threshold 0.58, margin 0.08 and the actual pinned model revision.
++This compares the incremental semantic suggestions; it is not semantic-only
++matching and does not evaluate a candidate's proficiency or job suitability.
++
++The earlier `pilot-v1.json` and AI draft are development material. If humans review
++that same packet now, report a retrospectively human-reviewed development pilot.
++Do not relabel it as a clean prospective test merely because the file contains a
++`test` split. The earlier development-fit diagnostic is not an independent result.
++
++For a fresh packet, a coordinator who has not examined new predictions should
++freeze selection and audit overlap with all previously seen postings. A new
++filename, new seed or newer retrieval timestamp alone does not ensure new text.
++Check provider IDs, normalized text, employer/title groups and near-duplicate
++content. Document any overlap and its handling before evaluation. The current
++exporter groups within a packet; it does not automatically exclude old pilot jobs.
++If fresh independent cases cannot be obtained in time, retain the original pilot
++and state its exposure limitation rather than inventing a holdout.
++
++### 3.2 Practical commands
++
++Use the existing documented exporter/review UI. An example for a deliberately new
++candidate packet, after refreshing the selected job boards:
++
++```powershell
++.\.venv\Scripts\python.exe .\backend\scripts\research_evaluation.py export --size 24 --seed career-review-2026-09-30-v1 --out .\data\research\pilot-v2.json
++```
++
++Audit this candidate packet before assigning reviewers. Do not hand-edit sealed
++text, labels or splits. If the selection rule needs changing, make a documented
++exporter change before freezing a replacement packet, or label this pilot exposed.
++
++R1 and R2 open the same packet in `research/review.html`, independently label all
++ten concepts per case as present/absent/uncertain, cite job passages and record
++ambiguities. They must not use the model output, the earlier AI draft or each
++other's labels. If they already saw those materials, disclose that and use other
++reviewers where possible. Save original review JSON files separately.
++
++With actual completed review files:
++
++```powershell
++.\.venv\Scripts\python.exe .\backend\scripts\research_evaluation.py prepare-adjudication --dataset .\data\research\pilot-v2.json --review-a .\data\research\review-R1.json --review-b .\data\research\review-R2.json --out .\data\research\adjudication-v2.json
++```
++
++If there are disagreements, a third reviewer opens the generated adjudication
++packet in the review page and saves a completed review, for example
++`adjudicated-R3.json`. The packet itself is not a completed review.
++
++```powershell
++.\.venv\Scripts\python.exe .\backend\scripts\research_evaluation.py evaluate --dataset .\data\research\pilot-v2.json --review-a .\data\research\review-R1.json --review-b .\data\research\review-R2.json --adjudication .\data\research\adjudicated-R3.json --split test --out .\data\research\human-pilot-v2-test
++```
++
++Omit `--adjudication` and its path when R1/R2 have no disagreements. Output folders
++must be new. The command's `test` choice is a technical split, not a certificate of
++independence. Record actual exposure in the study register and written report.
++See [the existing evaluator guide](../RESEARCH_EVALUATION.md) for schema details.
++
++### 3.3 Outcomes
++
++Primary: paired difference in micro-F1, hybrid minus keyword, on resolved cells.
++Also report precision, recall, per-skill support/F1, fraction of resolved cells,
++manual-review coverage and error examples. Treat both methods' uncertain labels
++with the same exclusion mask. Never silently treat uncertain as absent.
++
++Report the tool's pre-adjudication agreement and kappa, noting domination by absent
++labels when present. Its paired job-level bootstrap interval is descriptive for
++a small convenience sample; employer/template clustering remains a limitation.
++The target is 12 test jobs, not 120 independent observations. Do not select a best
++seed/run after seeing its result. If methods tie, report the tie.
++
++## 4. RQ2 — appropriateness of the learning action
++
++### 4.1 Unit, inputs and independent reference
++
++One case is one participant, one frozen target job, one supported skill and one
++of that skill's diagnostic topics. Three topic cases for a person remain a single
++participant cluster in analysis. Six participants can provide up to 18 topic cases;
++this is not a sample of 18 independent people.
++
++Choose a job whose relevant skill is confirmed by a human reading the frozen text.
++Hold that confirmed requirement constant across conditions. The three foundation
++topics are the diagnostic's scope, not a claim that the job demands each exact
++quiz concept. Do not change the extraction method between recommendation arms.
++
++Before collecting outcomes, a qualified person creates and checks a fresh practical
++exercise with three independently scorable parts for the chosen skill. It must
++require application/explanation beyond the published six-question quiz and roadmap
++practice examples. The exercise, rubric and acceptable solutions are frozen,
++versioned and retained privately; reviewers record errors or ambiguities. This
++batch provides forms, not a validated exercise bank. Study collection must wait
++until this content review is complete, or be reported only as a protocol demonstration.
++
++A suitable structure is a small SQL querying exercise, a Python function with
++collections/error handling, or an HTTP request/response design task. Include all
++necessary data and environment assumptions. If a task cannot measure one topic,
++mark that topic's reference insufficient instead of inventing an outcome.
++
++### 4.2 Session order (approximately 20–30 minutes)
++
++1. Record voluntary participation, exposure to the project and selected skill/job.
++2. Record the candidate's optional 1–10 self-rating **before** tests or feedback.
++3. Complete the fresh practical exercise first, saving the original response. Use
++   a fixed assistance rule: no external assistance, including generative AI, during
++   this brief evaluation; document accidental assistance or task interruptions.
++   Skipping is allowed. Do not pressure participants into answers.
++4. Complete one first-exposure app diagnostic for that skill. Save its attempt ID,
++   version and exact result. Do not substitute the best of repeated attempts.
++5. Have raters independently judge the fresh task response without seeing the
++   self-rating, quiz score, policy outputs or each other's ratings. Retain both
++   original reviews and reconcile disagreement before unmasking method outcomes.
++6. Generate the three condition outputs using the frozen definitions below. Preserve
++   the original candidate record; hypothetical comparator outputs are separate study
++   records, never changes to the candidate's assessment or live app guidance.
++7. Optional: show uniformly formatted, masked condition cards in a prespecified
++   rotating order and collect usefulness comments. These are usability opinions,
++   not independent evidence that the recommendation is correct.
++
++Freeze and document timing, tools allowed and any accommodations. Failed application
++requests are technical missing data; retain them in the flow log rather than
++scoring the candidate as incorrect.
++
++### 4.3 Three fixed conditions
++
++These are deliberately simple, researcher-defined controls. They are not replicas
++of R1–R8 and cannot support a claim of superiority over state-of-the-art systems.
++Use the same action vocabulary, resources and presentation layout across conditions.
++
++| Condition | Information used | Rule for each topic |
++| --- | --- | --- |
++| B0 — self-report-only control | Pre-test rating for the selected skill | Rating 1–5 → `practice`; 6–10 → `no_targeted_practice`; no rating → `collect_evidence`. Apply the skill-wide rating to each topic and disclose this coarse baseline. The cutoff is a prespecified convenience, not a validated proficiency threshold. |
++| B1 — assessment with skips counted as errors | The same quiz responses as B2 | If wrong plus unanswered count is above zero → `practice`; otherwise → `no_targeted_practice`. An entirely absent submitted assessment → `collect_evidence`. This is an experimental ablation, not the deployed app policy. |
++| B2 — current evidence policy | The same quiz responses as B1 | Any wrong answer → `practice`; otherwise any unanswered item → `collect_evidence`; all correct/complete → `no_targeted_practice`. No submitted attempt → `collect_evidence`. Preserve the count of skips when practice is suggested. |
++
++`no_targeted_practice` means this limited observation does not prescribe remediation;
++it never means “proficient” or “job-ready”. `collect_evidence` means a fresh task or
++review is needed, not that a course must be taken. Projects and certificates are
++held constant as unverified context. This study does not test a fusion model.
++
++For this small pilot the coordinator may fill condition rows manually from the
++exact rules and saved app result, with a second person checking them. Record rule
++versions and row checks in the form. B0/B1 are not new application features. RQ1's
++`evaluate` command cannot process these recommendation forms.
++
++### 4.4 Independent reference labels and outcome rubric
++
++For each practical-task topic, raters select one label and quote the observable
++response supporting it:
++
++- `practice_supported`: an identified conceptual/procedural error supports targeted
++  practice on the sampled topic.
++- `no_targeted_practice_supported`: the response satisfies the frozen practical-task
++  criteria for this topic. It does not establish complete skill mastery.
++- `insufficient_reference`: skipped/incomplete/ambiguous work or a flawed task prevents
++  a defensible topic judgement. Record whether the cause is candidate nonresponse,
++  task design, rater disagreement or a technical failure.
++
++Do not derive these labels from the MCQ answer key, our recommendation rule or an
++AI answer. Two human raters may still be wrong; report expertise and agreement.
++Use [PILOT_FORMS.md](PILOT_FORMS.md) for independent records and adjudication.
++
++Prespecified decision utility (0–2), an operational study rubric rather than a
++validated educational scale:
++
++| Independent practical-task reference | `practice` | `collect_evidence` | `no_targeted_practice` |
++| --- | ---: | ---: | ---: |
++| `practice_supported` | 2 | 1 | 0 |
++| `no_targeted_practice_supported` | 0 | 1 | 2 |
++| `insufficient_reference` | 0 | 2 | 0 |
++
++This rewards a justified decisive action over indefinite evidence collection when
++reference evidence is adequate. It also allows B2 to lose: if the quiz topic is
++skipped but the practical task shows errors, B1 can receive 2 while B2 receives 1.
++The rubric and baseline cutoff must be accepted/frozen before outcomes are viewed;
++if changed later, record an exploratory amendment and report both analyses.
++
++### 4.5 Analysis, denominators and decision rules
++
++**Primary contrast:** for each participant, average B2 minus B0 utility across
++eligible topics with resolved practical references (`practice_supported` or
++`no_targeted_practice_supported`). Report the mean/median of these participant
++contrasts, individual values and number of participants/topics retained. Exclude
++participants with no resolved topic from this primary mean, report how many and why.
++This avoids obtaining a favourable primary result solely by rewarding abstention
++on tasks our reviewers could not evaluate.
++
++**Secondary contrast:** B2 minus B1 utility with the same resolved-topic rule;
++report separately on topics with skips and without skips. If there are no skips,
++B1/B2 cannot identify the effect of skip handling. State that limitation; do not
++ask participants to fabricate skips or manufacture a positive finding.
++
++Also report, per condition, raw numerators/denominators for:
++
++- Practice recommendations on reference-adequate topics / all reference-adequate
++  topics (unnecessary practice relative to the sampled task).
++- `no_targeted_practice` on reference-error topics / all reference-error topics
++  (missed practice relative to the sampled task).
++- `collect_evidence` / all evaluable topic cases (deferral rate), and its breakdown
++  by resolved/insufficient reference.
++- Appropriate deferrals on `insufficient_reference`, with each reason category shown.
++- Rater agreement before reconciliation; missing records and technical failures.
++
++A zero denominator is **N/A**, not zero. Report insufficient-reference utility as a
++separate sensitivity table using the rubric; never mix it into the primary contrast
++without also reporting the resolved-only result. Equal-weight participants, not
++quiz items or duplicated topic cards, for the main summary. Missing condition data
++are paired exclusions with recorded reasons, not imputed successes.
++
++For this feasibility pilot, use descriptive results and case analysis. Do not report
++population-level significance, statistical power or learning gains. Optional
++usefulness ratings (1–5) and presentation time are secondary usability observations.
++Show ties, negative differences and counterexamples as explicitly as improvements.
++
++## 5. Content review, reproducibility and threats
++
++Review all 18 diagnostic items and mapped resources using
++[CONTENT_REVIEW_FORM.md](CONTENT_REVIEW_FORM.md). A human sign-off means checked
++content, not validated proficiency measurement. If a published question or answer
++changes, create a new bank version and freeze it before participant collection.
++Do not rewrite snapshots or pool different bank versions without reporting them.
++
++Retain exact job text, provenance, IDs, anonymised practical responses, first-attempt
++results, independent ratings, reconciliations, condition actions and rule version.
++Do not publish identifiable participant data or third-party content without the
++necessary permission. Public reporting can use aggregate results and permitted
++short examples; retain full audit material privately.
++
++Main threats: a tiny convenience sample, developer/participant exposure, two items
++per topic, hand-written narrow controls, uncertain practical-task validity, rater
++bias, assistance/guessing, clustered employers, limited language/role coverage,
++fixed questions and missing responses that are not random. Snapshot traceability
++improves auditability but does not remove these threats.
++
++## 6. What can be presented on 3 October
++
++| Evidence available | Defensible presentation |
++| --- | --- |
++| Working software only | Demonstration and proposed protocol; results pending |
++| AI diagnostic only | Development error analysis, clearly labelled AI-assisted |
++| Exposed packet plus real independent labels | Retrospective, limited extraction evaluation with exposure disclosure |
++| Fresh reviewed job sample | Small frozen extraction pilot within the stated vocabulary/sampling scope |
++| Independently reviewed practical-task cases | Exploratory recommendation-policy comparison with sample, missingness and trade-offs |
++
++Report each study's actual status. Never replace missing human data with simulated
++participants or synthetic labels and then call the output a real study.
+diff --git a/docs/research/RESEARCH_POSITIONING.md b/docs/research/RESEARCH_POSITIONING.md
+new file mode 100644
+index 0000000..f20c55f
+--- /dev/null
++++ b/docs/research/RESEARCH_POSITIONING.md
+@@ -0,0 +1,114 @@
++# Research positioning and claim boundaries
++
++Draft, 29 September 2026. Implementation inspected at commit `272efb0`.
++Related work: [LITERATURE_MATRIX.md](LITERATURE_MATRIX.md).
++Study design: [PILOT_PROTOCOL.md](PILOT_PROTOCOL.md).
++
++## Working title
++
++**AI Career Navigator: Assessment Evidence and Missing-Data Handling in
++Job-Linked Learning Guidance**
++
++Avoid “A Novel AI Model” until a model contribution and its evidence exist.
++
++## Problem statement
++
++A job posting can mention a skill that is absent from a candidate profile. That
++absence can reflect missing information, rather than inability. Similarly, an
++unanswered diagnostic question is not an observed wrong answer. A career guidance
++system should expose these distinctions when suggesting a next learning action.
++The research task is to measure the consequences of these decisions on an explicit,
++limited set of skills and candidate cases.
++
++## Proposed contribution
++
++The current implementation separates self-reported claims, unverified project and
++certificate records, diagnostic answers, and self-reported learning activity. It
++retains versioned job, candidate, assessment and recommendation snapshots. It uses
++fixed rules to distinguish practice suggested by errors from a need to collect
++more evidence. A proposed controlled pilot compares the resulting actions with
++self-report-only guidance and an assessment rule that counts skips as errors.
++
++This is a proposed **system and empirical evaluation contribution**. Prior work
++already covers embeddings, skills taxonomies, assessments and learning/job
++recommendations. The literature comparison does not establish that our policy or
++record structure is globally new. A useful result would be a transparent,
++reproducible account of when this policy helps, harms or makes no difference.
++
++## Research questions
++
++- **RQ1 — extraction:** With the same frozen job texts, what changes when semantic
++  suggestions are added to the current keyword/alias baseline?
++- **RQ2 — recommendation:** With job requirements held fixed, how do assessment
++  evidence and the handling of unanswered questions affect the appropriateness of
++  topic-level recommendations?
++
++RQ1 and RQ2 need separate reference data and metrics. Better extraction does not
++establish better learning guidance. Higher quiz scores do not establish successful
++learning, employability or job suitability.
++
++## Operational states
++
++| Evidence | Current interpretation | Learning action within the sampled topic |
++| --- | --- | --- |
++| No submitted assessment | Knowledge is unassessed | Request an assessment or review |
++| All questions in the topic skipped | No assessed answers | Collect evidence; resources are optional |
++| At least one wrong answer | An error occurred on this small diagnostic | Suggest topic practice; also show remaining skips |
++| All topic answers correct and complete | This question set was answered correctly | No targeted remedial step from this attempt; broader evidence still needed |
++| Project/certificate tag | Candidate-submitted, unverified claim | Show as context; do not convert to a score |
++| Practice marked complete | Self-reported activity | Do not rewrite the assessment result |
++
++Two questions per topic cannot support a calibrated proficiency scale. These
++states describe available observations; they do not diagnose an entire skill.
++
++## What is actually implemented
++
++- Flask/PostgreSQL candidate workspace with a plain JavaScript UI.
++- Six-question SQL, Python and REST/HTTP diagnostic banks, all draft content.
++- A ten-concept skill catalogue; keyword/alias matching plus optional pretrained
++  MiniLM suggestions and conservative context-review rules.
++- Selected cached employer-board postings, manual refresh, timestamps and source
++  versions; this is not an exhaustive labour-market feed.
++- Job cards link to relevant supported skill diagnostics. A diagnostic's roadmap
++  is selected by topic outcomes. It is **not yet filtered or prioritised by the
++  exact topics in an individual posting**; call it job-linked guidance.
++- Immutable comparisons use the latest submitted attempt per skill, not the best
++  score. A new comparison incorporates updated records without rewriting old ones.
++- Curated courses/references, original ungraded practice tasks and activity tracking.
++
++There is no calibrated hiring score, automatic credential verification, adaptive
++item selection, learned course ranking or combined project/certificate/quiz score.
++
++## Claims and required evidence
++
++| Claim | Status now | Evidence needed before claiming more |
++| --- | --- | --- |
++| The software performs the described flow | Functional checks completed | Maintain reproducible setup and demo checks |
++| The new banks measure overall proficiency | Unsupported | Content review, broader tasks and appropriate measurement validation |
++| Semantic suggestions improve extraction | Untested on an independent reference; current AI diagnostic gives no method separation | Reviewed labels, exposure audit, paired frozen evaluation |
++| Missing-data handling improves guidance | Hypothesis | RQ2 comparison with independent practical-task references and reported trade-offs |
++| Our approach is first or unique | Not established | Broader prior-art review; use a bounded claim even if no identical system is located |
++| Course completion improves skill | Unsupported | Fresh outcome measures and an appropriate longitudinal/intervention design |
++| We trained a career recommendation model | False for the current version | A defined training task, reviewed data, training run and independent evaluation |
++
++## Stored data and live data
++
++The pinned MiniLM encoder runs inference; current roadmap rules are not a trained
++recommender. Historic datasets, frozen job packets and snapshots support review and
++reproducibility. Live postings are refreshed inputs for inference, not automatic
++training labels. A future supervised task needs a documented label definition,
++reviewed train/validation/test partitions and grouping to control duplicate leakage.
++The initial 24-job AI-labelled packet is development material, not sufficient
++independent evidence for model training claims.
++
++## Language for Saturday
++
++“We built a working prototype connecting selected job postings with skill claims,
++short diagnostics and learning resources. Our proposed study tests how assessment
++evidence and unanswered-question handling change learning recommendations. We can
++trace each output to the records used. The related-work review shows substantial
++feature overlap, so we are evaluating a specific policy rather than claiming the
++first integrated career platform. Independent evaluation is [state actual status].”
++
++Replace the bracket with the true status at presentation time. Never replace it
++with estimated or AI-generated participant results.
+diff --git a/docs/research/START_HERE.md b/docs/research/START_HERE.md
+new file mode 100644
+index 0000000..e240c1a
+--- /dev/null
++++ b/docs/research/START_HERE.md
+@@ -0,0 +1,72 @@
++# Research batch: what to do now
++
++Prepared 29 September 2026; delivery checklist updated 30 September 2026,
++against application commit `272efb0`.
++This batch adds research documents and blank forms. It does not change the running
++application, collect participant data or produce research results.
++
++## Read this first
++
++The original feature combination overlaps existing work. Our proposed contribution
++is a reproducible evaluation of assessment evidence and missing-answer handling in
++job-linked learning guidance. Novelty and improved effectiveness remain unproven.
++
++| File | Use |
++| --- | --- |
++| [RESEARCH_POSITIONING.md](RESEARCH_POSITIONING.md) | Problem, proposed contribution, exact implementation scope and wording for the expert |
++| [LITERATURE_MATRIX.md](LITERATURE_MATRIX.md) | Eight primary works, overlaps, reading limits and source links |
++| [PILOT_PROTOCOL.md](PILOT_PROTOCOL.md) | Two separate experiments, fixed comparators, reference labels and analysis rules |
++| [CONTENT_REVIEW_FORM.md](CONTENT_REVIEW_FORM.md) | All 18 questions with keys/explanations and blank human review fields |
++| [PILOT_FORMS.md](PILOT_FORMS.md) | Task review, session, independent reference, reconciliation and results forms |
++| [references.bib](references.bib) | Eight bibliography records, with metadata discrepancies flagged |
++| [study_register.template.json](../../research/protocol/study_register.template.json) | Record the actual freeze, people, exposure, versions and deviations privately |
++
++## Three actions today — 30 September
++
++1. **Prajwal:** commit this batch and read the positioning document. Record the
++   actual study choices and code version in a private copy of the register.
++2. **Content reviewer:** check the 18 items, answer keys and mapped resources. Review
++   a fresh practical exercise/rubric for each skill used in the candidate pilot.
++3. **Two independent reviewers:** prepare to label the frozen job packet and judge
++   practical responses independently. Record relevant expertise and any prior
++   exposure. Recruit available volunteers only under the team's research process.
++
++These are proposed roles, not assignments already accepted by team members.
++No invitations or messages have been sent. If reviewers or participants are not
++available, prepare the protocol and demonstration for Saturday and state that
++independent validation is pending. AI-generated reviews cannot replace it.
++
++## Where filled records go
++
++From the repository root, create the private working folder and copy templates:
++
++```powershell
++New-Item -ItemType Directory -Force .\data\research\study-v1 | Out-Null
++Copy-Item .\research\protocol\study_register.template.json .\data\research\study-v1\study-register.json
++Copy-Item .\docs\research\CONTENT_REVIEW_FORM.md .\data\research\study-v1\content-review.md
++Copy-Item .\docs\research\PILOT_FORMS.md .\data\research\study-v1\pilot-forms.md
++```
++
++Run those copy commands once: re-running them can overwrite filled copies. Keep
++separate copies for independent raters. The existing ignore rule excludes
++`data/research/` from normal commits. Do not force-add it.
++
++The Markdown forms and study-register JSON are **not app uploads** and are **not
++saved-review files for the annotation page**. They are documentation/recordkeeping.
++Use only the existing exporter and review-page formats in that page.
++
++## Sequence to Saturday 3 October
++
++- **30 September:** install this batch; settle scope and roles, complete feasible
++  content/source checks, freeze actual study inputs and begin independent work
++  only after the required reviews. Draft the report methods in parallel.
++- **1 October:** finish feasible collection and descriptive analysis; record what
++  remains incomplete. Keep negative/tied outcomes and exclusions.
++- **2 October:** finish the report/paper draft/slides and rehearse a stable demo.
++  Methods can be drafted earlier while data collection proceeds; results remain
++  explicitly pending until measured.
++- **3 October:** present working functionality, available evidence and limits.
++
++The next writing batch can turn these materials into the formal report and paper
++draft without waiting for results. It must retain “pending” wherever observations
++have not been collected.
+diff --git a/docs/research/references.bib b/docs/research/references.bib
+new file mode 100644
+index 0000000..65d0a37
+--- /dev/null
++++ b/docs/research/references.bib
+@@ -0,0 +1,87 @@
++% Verified against the linked primary records on 2026-09-29.
++% No abstracts copied. Check the two metadata discrepancies before submission.
++
++@inproceedings{reimers2019sbert,
++  author = {Reimers, Nils and Gurevych, Iryna},
++  title = {Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks},
++  booktitle = {Proceedings of EMNLP-IJCNLP},
++  year = {2019},
++  pages = {3982--3992},
++  doi = {10.18653/v1/D19-1410},
++  url = {https://aclanthology.org/D19-1410/}
++}
++
++@inproceedings{zhang2022skillspan,
++  author = {Zhang, Mike and Jensen, Kristian and Sonniks, Sif and Plank, Barbara},
++  title = {SkillSpan: Hard and Soft Skill Extraction from English Job Postings},
++  booktitle = {Proceedings of NAACL-HLT},
++  year = {2022},
++  pages = {4962--4984},
++  doi = {10.18653/v1/2022.naacl-main.366},
++  url = {https://aclanthology.org/2022.naacl-main.366/}
++}
++
++@misc{decorte2023extreme,
++  author = {Decorte, Jens-Joris and Verlinden, Severine and Van Hautte, Jeroen and Deleu, Johannes and Develder, Chris and Demeester, Thomas},
++  title = {Extreme Multi-Label Skill Extraction Training using Large Language Models},
++  year = {2023},
++  eprint = {2307.10778},
++  archivePrefix = {arXiv},
++  primaryClass = {cs.CL},
++  url = {https://arxiv.org/abs/2307.10778},
++  note = {Author manuscript; arXiv record reports acceptance at the AI4HR and PES workshop at ECML-PKDD 2023}
++}
++
++@article{fettach2024jobedkg,
++  author = {Fettach, Yousra and Bahaj, Adil and Ghogho, Mounir},
++  title = {JobEdKG: An uncertain knowledge graph-based approach for recommending online courses and predicting in-demand skills based on career choices},
++  journal = {Engineering Applications of Artificial Intelligence},
++  year = {2024},
++  volume = {131},
++  pages = {107779},
++  doi = {10.1016/j.engappai.2023.107779},
++  url = {https://doi.org/10.1016/j.engappai.2023.107779}
++}
++
++@article{pinos2025psychometric,
++  author = {Pinos Ullauri, Luis Alberto and Lebis, Alexis and Karami, Abir and Vermeulen, Mathieu and Fleury, Anthony and Van den Noortgate, Wim},
++  title = {A Recommender System of Postgraduate Courses Based on Soft Skills: A Psychometric-inspired Approach},
++  journal = {International Journal of Artificial Intelligence in Education},
++  year = {2025},
++  volume = {35},
++  pages = {2117--2153},
++  doi = {10.1007/s40593-025-00463-z},
++  url = {https://link.springer.com/article/10.1007/s40593-025-00463-z}
++}
++
++@inproceedings{le2026careerpathkg,
++  author = {Le, Ngoc-Quang and Hoang, Duc Duong and Vuong, Thi-Hai-Yen and Tran, Mai Vu},
++  title = {CareerPathKG: Knowledge Graph Integrated Framework for Career Intelligence},
++  booktitle = {Proceedings of EACL, Volume 5: Industry Track},
++  year = {2026},
++  pages = {813--822},
++  doi = {10.18653/v1/2026.eacl-industry.60},
++  url = {https://aclanthology.org/2026.eacl-industry.60/},
++  note = {Author order follows the PDF title page; the landing-page order differs}
++}
++
++@article{vardhan2026careerbridge,
++  author = {Vardhan, M. Vamshi and Aadhyan, G. and Ujwal, K. Sai and Dinesh, A. and Raj, B. Mohan and {Mrs. Ramana}},
++  title = {GenAI Skill Analyser And Personalized Learning Path Recommendation},
++  journal = {International Journal of Creative Research Thoughts},
++  year = {2026},
++  volume = {14},
++  number = {4},
++  pages = {h311--h321},
++  url = {https://www.ijcrt.org/papers/IJCRT2604855.pdf},
++  note = {Paper ID IJCRT2604855. Title and author list follow the PDF; publisher landing-page metadata differs}
++}
++
++@inproceedings{kavas2025multilingual,
++  author = {Kavas, Hamit and Serra-Vidal, Marc and Wanner, Leo},
++  title = {Multilingual Skill Extraction for Job Vacancy--Job Seeker Matching in Knowledge Graphs},
++  booktitle = {Proceedings of the Workshop on Generative AI and Knowledge Graphs},
++  year = {2025},
++  pages = {146--155},
++  url = {https://aclanthology.org/2025.genaik-1.15/}
++}
+diff --git a/research/protocol/study_register.template.json b/research/protocol/study_register.template.json
+new file mode 100644
+index 0000000..7d9c5a2
+--- /dev/null
++++ b/research/protocol/study_register.template.json
+@@ -0,0 +1,107 @@
++{
++  "schema_version": "career-study-register-v1",
++  "protocol_version": "career-pilot-protocol-v1",
++  "status": "template_not_collected_not_frozen",
++  "prepared_on": "2026-09-29",
++  "timezone": "Asia/Kolkata",
++  "actual_freeze_timestamp": null,
++  "actual_git_commit": null,
++  "actual_worktree_clean": null,
++  "coordinator_id": null,
++  "implementation_inspected_at": "272efb0da68995a55626f1c044bf961a2a1da317",
++  "versions_to_verify_at_freeze": {
++    "model_id": "sentence-transformers/all-MiniLM-L6-v2",
++    "model_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
++    "skill_catalog": "backend-skills-2026-09-27-v1",
++    "extraction": "skill-extraction-context-v2",
++    "assessment_banks": {
++      "sql": "sql-foundations-v1",
++      "python": "python-foundations-v1",
++      "rest_api": "rest-http-foundations-v1"
++    },
++    "roadmap_policy": "topic-evidence-rules-v1"
++  },
++  "rq1": {
++    "status": "not_collected",
++    "planned_jobs": 24,
++    "planned_development_jobs": 12,
++    "planned_test_jobs": 12,
++    "actual_jobs": null,
++    "actual_test_jobs": null,
++    "packet_private_path": null,
++    "packet_fingerprint": null,
++    "original_pilot_exposure": "pilot-v1 and AI draft were used in development; not a clean prospective test",
++    "new_packet_overlap_audit": null,
++    "independence_claim_and_basis": null,
++    "reviewer_ids": [],
++    "adjudicator_id": null,
++    "reviewer_qualifications_private_path": null,
++    "review_files_and_hashes": [],
++    "uncertainty_policy": "Exclude unresolved uncertain job-skill cells identically for both methods and report coverage.",
++    "run_directories": []
++  },
++  "rq2": {
++    "status": "not_collected",
++    "planned_participants": 6,
++    "planned_people_per_skill": 2,
++    "actual_participants": null,
++    "actual_topic_cases": null,
++    "selection": "Convenience pilot; one supported skill and three topics per participant.",
++    "diagnostic_content_review_private_path": null,
++    "practical_task_versions_and_review_records": [],
++    "reference_rater_ids": [],
++    "reference_rater_exposure": null,
++    "conditions": {
++      "B0": "Self-rating 1-5: practice; 6-10: no_targeted_practice; missing: collect_evidence.",
++      "B1": "Wrong or skipped MCQ item: practice; all correct: no_targeted_practice; absent attempt: collect_evidence.",
++      "B2": "Any wrong: practice; otherwise skipped: collect_evidence; all correct: no_targeted_practice; absent attempt: collect_evidence."
++    },
++    "actions": [
++      "practice",
++      "collect_evidence",
++      "no_targeted_practice"
++    ],
++    "reference_labels": [
++      "practice_supported",
++      "no_targeted_practice_supported",
++      "insufficient_reference"
++    ],
++    "utility": {
++      "practice_supported": {
++        "practice": 2,
++        "collect_evidence": 1,
++        "no_targeted_practice": 0
++      },
++      "no_targeted_practice_supported": {
++        "practice": 0,
++        "collect_evidence": 1,
++        "no_targeted_practice": 2
++      },
++      "insufficient_reference": {
++        "practice": 0,
++        "collect_evidence": 2,
++        "no_targeted_practice": 0
++      }
++    },
++    "primary_contrast": "B2 minus B0; mean within participant over resolved references, then equal-weight participants.",
++    "secondary_contrast": "B2 minus B1 with the same rule; separately describe topics with skips.",
++    "insufficient_reference_policy": "Separate descriptive/sensitivity table; exclude from primary contrast.",
++    "zero_denominator_policy": "N/A; do not replace missing values with zero.",
++    "presentation_order_if_used": [
++      "B0,B1,B2",
++      "B1,B2,B0",
++      "B2,B0,B1"
++    ],
++    "participant_private_records": [],
++    "exclusions": [],
++    "results_private_path": null
++  },
++  "deviations": [],
++  "human_protocol_review": {
++    "reviewer_id": null,
++    "date": null,
++    "decision": "pending",
++    "notes": null
++  },
++  "publication_claim_status": "No independent results or confirmed novelty supplied by this template."
++}

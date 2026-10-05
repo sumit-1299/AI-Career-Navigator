@@ -1,12 +1,13 @@
 # AI Career Navigator — implementation and research status
 
-Updated 30 September 2026. This file distinguishes working functionality from
+Updated 5 October 2026. Final submission is Thursday 8 October. This file distinguishes working functionality from
 planned research claims. See [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for the broader
 product vision; not every part of that vision is implemented.
 
 | Area | Current implementation | Remaining work / limits |
 | --- | --- | --- |
 | Local application | Flask, PostgreSQL, authentication and browser workspace | Deployment hardening and a hosted demo remain separate work |
+| Resume and interface | PDF/DOCX/TXT extraction preview, editable saved text, version checks, responsive navigation and evidence alignment table | Review extracted text; scanned PDFs need pasted/OCR text; ten-concept literal resume mentions are unverified claims |
 | Skill assessments | SQL, Python and REST/HTTP six-question diagnostics, immutable attempts, accuracy/coverage and topic feedback | Draft content; independent review and proficiency validation pending; HTTP questions do not assess full REST design |
 | Learning roadmap | Curated SQL/Python/HTTP resources and original tasks linked to topic evidence; job cards lead to assessments and new comparisons | Progress is self-reported; tasks are ungraded and learning effectiveness is unvalidated |
 | Candidate evidence | Projects/certificates with skill tags, edits, version checks and archive/restore | Records remain unverified; no automatic credential verification |
@@ -15,6 +16,16 @@ product vision; not every part of that vision is implemented.
 | Evaluation tools | Frozen job exporter, independent annotation page, adjudication, paired extraction metrics and a separate AI-draft development diagnostic | Human validation remains pending; agreement with an AI draft is preliminary and cannot establish accuracy |
 | Research contribution | Evidence distinctions and source snapshots implemented; focused eight-work literature matrix and two-part pilot protocol drafted | Close prior-work overlap exists; novelty and recommendation benefit remain unproven; human source/content review and data collection pending |
 | Training | Pretrained model used for inference | No project-specific supervised training or fine-tuning completed |
+
+The resume/UI batch extends `c9d104a`. Comparisons now preserve the saved resume
+with ratings, project/certificate records and latest submitted diagnostics. Source
+coverage counts include explicitly named job concepts, including preferred ones;
+they overlap and are not a job-fit percentage. Semantic job suggestions remain
+visible separately. See [RESUME_ALIGNMENT.md](RESUME_ALIGNMENT.md).
+
+On 5 October, all 140 backend tests passed in an isolated Python 3.12 / SQLite
+environment, including actual pinned-model inference. This is technical
+verification, not independent research validation or a PostgreSQL deployment test.
 
 The next research task is documented in
 [RESEARCH_EVALUATION.md](RESEARCH_EVALUATION.md). It measures job-skill extraction
@@ -52,6 +63,7 @@ It contains blank forms and a proposed protocol, not new study results.
 
 ## Relevant implementation notes
 
+- [RESUME_ALIGNMENT.md](RESUME_ALIGNMENT.md)
 - [MULTISKILL_ASSESSMENTS.md](MULTISKILL_ASSESSMENTS.md)
 - [SQL_ASSESSMENT.md](SQL_ASSESSMENT.md)
 - [ASSESSMENT_UI.md](ASSESSMENT_UI.md)

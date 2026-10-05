@@ -4,6 +4,7 @@ import re
 
 from services.semantic_encoder import MODEL_ID, MODEL_REVISION, get_encoder
 from services.skill_catalog import BY_KEY, CATALOG_VERSION, RELATIONS, SKILLS, canonical_key, keyword_keys
+from services.resume_evidence import analyze_resume, alignment_summary
 
 POLICY_VERSION = "pasted-job-comparison-v2"
 EXTRACTION_VERSION = "skill-extraction-context-v2"
@@ -154,6 +155,9 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
         for key, source in found:
             rows.setdefault(key, []).append(source)
     support, unmapped_claims = profile_support(snapshot)
+    resume = snapshot.get("resume")
+    resume_analysis = analyze_resume(resume["text"]) if resume else None
+    resume_mentions = {row["skill_key"]: row["passages"] for row in resume_analysis["skills"]} if resume_analysis else {}
     result_rows = []
     for skill in SKILLS:
         key = skill["key"]
@@ -176,18 +180,21 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
             guidance = f"All questions in this {skill['label']} attempt were answered correctly. That describes this small diagnostic; use fresh practical tasks for broader evidence."
         elif assessment:
             guidance = f"The {skill['label']} attempt was entirely skipped. This skill remains unassessed; collect more evidence."
-        elif support[key]:
+        elif support[key] or resume_mentions.get(key):
             guidance = "A candidate claim is recorded. Collect an independent assessment or review before treating proficiency as established."
         else:
             guidance = "No matching claim or assessment is recorded. Ask for evidence; absence of a record does not establish a skill deficit."
         result_rows.append({"skill_key": key, "label": skill["label"], "esco_uri": skill["esco_uri"],
                             "mapping": "keyword" if direct_sources else "semantic_suggestion",
                             "job_sources": rows[key], "candidate_claims": support[key], "related_claims": related,
+                            "resume_mentions": resume_mentions.get(key, []),
                             "assessment": assessment, "guidance": guidance})
     direct_rows = [row for row in result_rows if row["mapping"] == "keyword"]
     return {"policy_version": POLICY_VERSION, "extraction_version": EXTRACTION_VERSION,
             "catalog_version": CATALOG_VERSION, "mode": mode,
             "candidate_evidence_version": "latest-per-skill-v2",
+            "resume_analysis": resume_analysis,
+            "alignment": alignment_summary(result_rows, bool(resume)),
             "model": {"id": MODEL_ID, "revision": MODEL_REVISION, "runtime": "onnx-cpu", "pooling": "attention-mask-mean-l2", "max_tokens": 256} if mode == "semantic" else None,
             "suggestion_policy": {"minimum_cosine": SIMILARITY_THRESHOLD, "minimum_margin": MARGIN_THRESHOLD,
                                   "validation_status": "heuristic_not_calibrated"} if mode == "semantic" else None,

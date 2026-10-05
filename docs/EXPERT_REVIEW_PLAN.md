@@ -1,6 +1,6 @@
-# Expert review plan — Saturday 3 October 2026
+# Final submission plan — Thursday 8 October 2026
 
-Plan updated 30 September 2026. Target: a coherent, reproducible research prototype
+Plan updated 5 October 2026 after the submission date changed. Target: a coherent, reproducible research prototype
 and an honest preliminary evaluation. Keep extending the existing repository and
 credit the original team contribution. Do not restart the project.
 
@@ -21,9 +21,11 @@ assessment, provenance and uncertainty needs comparison with existing career and
 learning systems before asserting a gap. A collection of useful features alone
 is not proof of a new research contribution.
 
-## What works after the multi-skill batch
+## What works after the resume/UI batch
 
 - Local authenticated candidate workspace and database records.
+- Resume extraction preview, reviewed saved text, versioned resume/job alignment
+  and responsive navigation across the complete candidate workflow.
 - SQL, Python and REST/HTTP foundation diagnostics with immutable results.
 - Curated topic-linked resources, original practice tasks and activity tracking.
 - Self-reported skills, project and certificate records, labelled unverified.
@@ -102,10 +104,10 @@ and present the result as independent validation or a new foundation model.
 
 | Date | Deliverable |
 | --- | --- |
-| Wed 30 Sep | Install research batch; settle roles, content/source review and freeze study inputs before independent annotation/pilot; begin report methods |
-| Thu 1 Oct | Finish feasible pilot runs, analyse errors and document limitations; preserve incomplete results honestly |
-| Fri 2 Oct | Feature freeze; finish report/paper draft/slides; rehearse demo and record backup |
-| Sat 3 Oct | Show the system, available evidence and precisely scoped research question; obtain expert feedback |
+| Mon 5 Oct | Apply resume/UI update, run the complete local flow and commit it; review report/paper drafts and settle author attribution |
+| Tue 6 Oct | Complete feasible human content/source checks and independent pilot work only after freezing inputs; record actual counts and exclusions |
+| Wed 7 Oct | Freeze code; insert only measured results, prepare slides, rehearse the cached-data demo and record a backup |
+| Thu 8 Oct | Submit the verified application and documents with completed/pending work stated accurately |
 
 If independent data collection cannot finish, present the evaluation protocol and
 clearly marked preliminary diagnostics. Do not invent results to fill the paper.

@@ -1,7 +1,8 @@
 # Research batch: what to do now
 
-Prepared 29 September 2026; delivery checklist updated 30 September 2026,
-against application commit `272efb0`.
+Prepared 29 September 2026; delivery checklist updated 5 October 2026.
+Original research baseline: `272efb0`; research documents: `c9d104a`.
+The resume/UI update extends that baseline; record its actual commit for any study.
 This batch adds research documents and blank forms. It does not change the running
 application, collect participant data or produce research results.
 
@@ -21,7 +22,7 @@ job-linked learning guidance. Novelty and improved effectiveness remain unproven
 | [references.bib](references.bib) | Eight bibliography records, with metadata discrepancies flagged |
 | [study_register.template.json](../../research/protocol/study_register.template.json) | Record the actual freeze, people, exposure, versions and deviations privately |
 
-## Three actions today — 30 September
+## Three actions today — 5 October
 
 1. **Prajwal:** commit this batch and read the positioning document. Record the
    actual study choices and code version in a private copy of the register.
@@ -33,7 +34,7 @@ job-linked learning guidance. Novelty and improved effectiveness remain unproven
 
 These are proposed roles, not assignments already accepted by team members.
 No invitations or messages have been sent. If reviewers or participants are not
-available, prepare the protocol and demonstration for Saturday and state that
+available, prepare the protocol and demonstration for Thursday 8 October and state that
 independent validation is pending. AI-generated reviews cannot replace it.
 
 ## Where filled records go
@@ -55,18 +56,16 @@ The Markdown forms and study-register JSON are **not app uploads** and are **not
 saved-review files for the annotation page**. They are documentation/recordkeeping.
 Use only the existing exporter and review-page formats in that page.
 
-## Sequence to Saturday 3 October
+## Sequence to Thursday 8 October
 
-- **30 September:** install this batch; settle scope and roles, complete feasible
-  content/source checks, freeze actual study inputs and begin independent work
-  only after the required reviews. Draft the report methods in parallel.
-- **1 October:** finish feasible collection and descriptive analysis; record what
-  remains incomplete. Keep negative/tied outcomes and exclusions.
-- **2 October:** finish the report/paper draft/slides and rehearse a stable demo.
-  Methods can be drafted earlier while data collection proceeds; results remain
-  explicitly pending until measured.
-- **3 October:** present working functionality, available evidence and limits.
+- **5 October:** apply the resume/UI batch and verify the full local flow. Review
+  the report and paper drafts; settle authorship and available human reviewers.
+- **6 October:** finish feasible source/content checks and independent collection
+  after freezing the study record. Analyse only observations actually obtained.
+- **7 October:** freeze code, update results/status, prepare slides, rehearse the
+  complete demo and record a backup. Keep a successfully refreshed job cache.
+- **8 October:** submit the application, report, paper draft and required materials.
 
-The next writing batch can turn these materials into the formal report and paper
-draft without waiting for results. It must retain “pending” wherever observations
-have not been collected.
+The report and paper can describe the implemented system now. Leave independent
+results explicitly pending until collected. Resume mentions are new display
+context, not a tested proficiency measure or a new outcome in the pilot.

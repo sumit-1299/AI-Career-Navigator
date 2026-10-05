@@ -12,6 +12,7 @@ from routes.roadmaps import roadmaps_bp
 from routes.evidence import evidence_bp
 from routes.job_matches import job_matches_bp
 from routes.jobs import jobs_bp
+from routes.resume import resume_bp
 
 def create_app():
     app = Flask(__name__)
@@ -27,6 +28,7 @@ def create_app():
     app.register_blueprint(evidence_bp)
     app.register_blueprint(job_matches_bp)
     app.register_blueprint(jobs_bp)
+    app.register_blueprint(resume_bp)
 
     with app.app_context():
         from models.user import User

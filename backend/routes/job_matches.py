@@ -11,6 +11,7 @@ from models.assessment_attempt import AssessmentAttempt, iso_utc, utc_now
 from models.candidate_evidence import CandidateEvidence
 from models.job_comparison import JobComparison
 from models.skill import Skill
+from models.candidate_resume import CandidateResume
 from routes.assessments import current_user_id, error
 from services.assessment_catalog import BANKS
 from services.candidate_evidence import source_url, submission_id, text_field
@@ -56,7 +57,9 @@ def candidate_snapshot(user_id):
                 "review_status": attempt.question_snapshot["metadata"]["review_status"],
                 "submitted_at": iso_utc(attempt.submitted_at), "result": deepcopy(attempt.result),
             }
-    return {"captured_at": iso_utc(utc_now()), "snapshot_version": "candidate-evidence-v2",
+    resume = db.session.get(CandidateResume, user_id)
+    return {"captured_at": iso_utc(utc_now()), "snapshot_version": "candidate-evidence-v3",
+            "resume": resume.to_dict() if resume and resume.text else None,
             "skills": [{"id": skill.id, "skill_name": skill.skill_name, "proficiency": skill.proficiency} for skill in skills],
             "evidence": [item.to_dict() for item in evidence], "assessments": assessments,
             "sql_assessment": deepcopy(assessments.get("sql"))}

@@ -1,0 +1,1449 @@
+diff --git a/backend/app.py b/backend/app.py
+index c366d9c..94813db 100644
+--- a/backend/app.py
++++ b/backend/app.py
+@@ -12,6 +12,7 @@ from routes.roadmaps import roadmaps_bp
+ from routes.evidence import evidence_bp
+ from routes.job_matches import job_matches_bp
+ from routes.jobs import jobs_bp
++from routes.resume import resume_bp
+ 
+ def create_app():
+     app = Flask(__name__)
+@@ -27,6 +28,7 @@ def create_app():
+     app.register_blueprint(evidence_bp)
+     app.register_blueprint(job_matches_bp)
+     app.register_blueprint(jobs_bp)
++    app.register_blueprint(resume_bp)
+ 
+     with app.app_context():
+         from models.user import User
+diff --git a/backend/models/candidate_resume.py b/backend/models/candidate_resume.py
+new file mode 100644
+index 0000000..ff0a0f3
+--- /dev/null
++++ b/backend/models/candidate_resume.py
+@@ -0,0 +1,19 @@
++"""One editable resume per account; comparisons retain their own text snapshot."""
++from extensions import db
++from models.assessment_attempt import iso_utc, utc_now
++
++
++class CandidateResume(db.Model):
++    __tablename__ = "candidate_resumes"
++    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
++    text = db.Column(db.Text, nullable=False)
++    source_name = db.Column(db.String(160), nullable=False)
++    content_hash = db.Column(db.String(64), nullable=False)
++    version = db.Column(db.Integer, nullable=False, default=1)
++    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utc_now)
++    __mapper_args__ = {"version_id_col": version}
++
++    def to_dict(self):
++        return {"text": self.text, "source_name": self.source_name,
++                "content_hash": self.content_hash, "version": self.version,
++                "updated_at": iso_utc(self.updated_at), "verification_status": "unverified"}
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+index 217b1f0..33c1ea8 100644
+--- a/backend/requirements.txt
++++ b/backend/requirements.txt
+@@ -16,3 +16,4 @@ python-dotenv==1.2.3
+ SQLAlchemy==2.0.52
+ typing_extensions==4.16.0
+ Werkzeug==3.1.8
++pypdf==6.19.0
+diff --git a/backend/routes/job_matches.py b/backend/routes/job_matches.py
+index 20b443f..3ede119 100644
+--- a/backend/routes/job_matches.py
++++ b/backend/routes/job_matches.py
+@@ -11,6 +11,7 @@ from models.assessment_attempt import AssessmentAttempt, iso_utc, utc_now
+ from models.candidate_evidence import CandidateEvidence
+ from models.job_comparison import JobComparison
+ from models.skill import Skill
++from models.candidate_resume import CandidateResume
+ from routes.assessments import current_user_id, error
+ from services.assessment_catalog import BANKS
+ from services.candidate_evidence import source_url, submission_id, text_field
+@@ -56,7 +57,9 @@ def candidate_snapshot(user_id):
+                 "review_status": attempt.question_snapshot["metadata"]["review_status"],
+                 "submitted_at": iso_utc(attempt.submitted_at), "result": deepcopy(attempt.result),
+             }
+-    return {"captured_at": iso_utc(utc_now()), "snapshot_version": "candidate-evidence-v2",
++    resume = db.session.get(CandidateResume, user_id)
++    return {"captured_at": iso_utc(utc_now()), "snapshot_version": "candidate-evidence-v3",
++            "resume": resume.to_dict() if resume and resume.text else None,
+             "skills": [{"id": skill.id, "skill_name": skill.skill_name, "proficiency": skill.proficiency} for skill in skills],
+             "evidence": [item.to_dict() for item in evidence], "assessments": assessments,
+             "sql_assessment": deepcopy(assessments.get("sql"))}
+diff --git a/backend/routes/resume.py b/backend/routes/resume.py
+new file mode 100644
+index 0000000..3569569
+--- /dev/null
++++ b/backend/routes/resume.py
+@@ -0,0 +1,111 @@
++"""Owner-scoped resume editing, extraction preview and optimistic updates."""
++import hashlib
++import json
++from pathlib import Path
++import subprocess
++import sys
++
++from flask import Blueprint, request
++from flask_jwt_extended import jwt_required
++from sqlalchemy.exc import SQLAlchemyError
++from sqlalchemy.orm.exc import StaleDataError
++from werkzeug.exceptions import RequestEntityTooLarge
++
++from extensions import db
++from models.assessment_attempt import utc_now
++from models.candidate_resume import CandidateResume
++from routes.assessments import current_user_id, error
++from services.resume_evidence import analyze_resume
++from services.resume_parser import MAX_FILE, MAX_TEXT
++from services.skill_catalog import SKILLS
++
++resume_bp = Blueprint("resume", __name__, url_prefix="/api/resume")
++
++
++@resume_bp.before_request
++@jwt_required()
++def account_required():
++    request.max_content_length = MAX_FILE + 65536
++    if current_user_id() is None:
++        return error("The candidate account is unavailable. Log in again.", 401)
++
++
++@resume_bp.after_request
++def private_response(response):
++    response.headers["Cache-Control"] = "no-store"
++    return response
++
++
++@resume_bp.errorhandler(RequestEntityTooLarge)
++def too_large(_):
++    return error("Choose a resume file up to 2 MB.", 413)
++
++
++def payload(record):
++    return {"status": "success", "version": record.version if record else 0,
++            "resume": record.to_dict() if record and record.text else None,
++            "analysis": analyze_resume(record.text if record else ""),
++            "catalogue": [{"key": s["key"], "label": s["label"]} for s in SKILLS]}
++
++
++@resume_bp.route("", methods=["GET", "PUT", "DELETE"])
++def resume():
++    user_id = current_user_id()
++    record = db.session.get(CandidateResume, user_id)
++    if request.method == "GET":
++        return payload(record)
++    body = request.get_json(silent=True)
++    fields = {"version"} if request.method == "DELETE" else {"version", "text", "source_name"}
++    if not isinstance(body, dict) or set(body) != fields or type(body.get("version")) is not int:
++        return error("Send the current version and the expected resume fields.", 400)
++    if body["version"] != (record.version if record else 0):
++        return error("Your resume changed in another request. Reload the saved resume before editing again.", 409)
++    text, name = "", ""
++    if request.method == "PUT":
++        text, name = body["text"], body["source_name"]
++        if not isinstance(text, str) or not 40 <= len(text.strip()) <= MAX_TEXT or "\x00" in text:
++            return error("Enter 40–30,000 characters of resume text.", 400)
++        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 160 or any(ord(c) < 32 for c in name):
++            return error("Provide a short resume name, up to 160 characters.", 400)
++        text = text.strip()
++        name = name.replace("\\", "/").rsplit("/", 1)[-1].strip()
++        if not name:
++            return error("Provide a resume name.", 400)
++    if record is None:
++        if request.method == "DELETE":
++            return payload(None)
++        record = CandidateResume(user_id=user_id)
++        db.session.add(record)
++    record.text, record.source_name = text, name
++    record.content_hash = hashlib.sha256(text.encode()).hexdigest()
++    record.updated_at = utc_now()
++    try:
++        db.session.commit()
++    except (StaleDataError, SQLAlchemyError):
++        db.session.rollback()
++        return error("The resume could not be saved. Reload the saved version before retrying.", 409)
++    return payload(record)
++
++
++@resume_bp.post("/extract")
++def extract():
++    if set(request.files) != {"file"} or request.form or len(request.files.getlist("file")) != 1:
++        return error("Upload one file in the file field.", 400)
++    uploaded = request.files["file"]
++    name = (uploaded.filename or "resume").replace("\\", "/").rsplit("/", 1)[-1]
++    suffix = Path(name).suffix.lower()
++    if suffix not in {".pdf", ".docx", ".txt"}:
++        return error("Choose PDF, DOCX or TXT, or paste your resume text.", 400)
++    data = uploaded.stream.read(MAX_FILE + 1)
++    if not data or len(data) > MAX_FILE:
++        return error("Choose a nonempty resume file up to 2 MB.", 400)
++    try:
++        child = subprocess.run([sys.executable, "-I", str(Path(__file__).resolve().parents[1] / "services" / "resume_parser.py"), suffix],
++                               input=data, capture_output=True, timeout=10, check=True)
++        result = json.loads(child.stdout)
++    except (subprocess.SubprocessError, ValueError, OSError):
++        return error("This file could not be read within the limit. Paste the resume text instead.", 400)
++    if "error" in result:
++        return error(result["error"], 400)
++    return {"status": "success", "text": result["text"], "source_name": name[:160],
++            "saved": False, "message": "Text extracted. Review it and choose Save resume. The original file is not stored."}
+diff --git a/backend/routes/skills.py b/backend/routes/skills.py
+index a7f9875..7a29a3d 100644
+--- a/backend/routes/skills.py
++++ b/backend/routes/skills.py
+@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
+ 
+ from extensions import db
+ from models.skill import Skill
++from routes.assessments import current_user_id, error
+ 
+ skills_bp = Blueprint("skills", __name__, url_prefix="/api/skills")
+ 
+@@ -10,20 +11,23 @@ skills_bp = Blueprint("skills", __name__, url_prefix="/api/skills")
+ @skills_bp.route("", methods=["POST"])
+ @jwt_required()
+ def add_skill():
+-    user_id = get_jwt_identity()
+-
+-    data = request.get_json()
++    user_id = current_user_id()
++    if user_id is None:
++        return error("The candidate account is unavailable. Log in again.", 401)
++    data = request.get_json(silent=True)
++    if not isinstance(data, dict) or set(data) != {"skill_name", "proficiency"}:
++        return error("Send only skill_name and proficiency.", 400)
+ 
+     skill_name = data.get("skill_name")
+     proficiency = data.get("proficiency")
+ 
+-    if not skill_name or proficiency is None:
++    if not isinstance(skill_name, str) or not 1 <= len(skill_name.strip()) <= 80:
+         return jsonify({
+             "status": "error",
+-            "message": "skill_name and proficiency are required"
++            "message": "Enter a skill name of 1–80 characters."
+         }), 400
+ 
+-    if not isinstance(proficiency, int) or proficiency < 1 or proficiency > 10:
++    if type(proficiency) is not int or proficiency < 1 or proficiency > 10:
+         return jsonify({
+             "status": "error",
+             "message": "proficiency must be between 1 and 10"
+@@ -31,7 +35,7 @@ def add_skill():
+ 
+     skill = Skill(
+         user_id=user_id,
+-        skill_name=skill_name,
++        skill_name=skill_name.strip(),
+         proficiency=proficiency
+     )
+ 
+@@ -68,4 +72,18 @@ def get_skills():
+     return jsonify({
+         "status": "success",
+         "skills": result
+-    }), 200
+\ No newline at end of file
++    }), 200
++
++
++@skills_bp.delete("/<int:skill_id>")
++@jwt_required()
++def remove_skill(skill_id):
++    user_id = current_user_id()
++    if user_id is None:
++        return error("The candidate account is unavailable. Log in again.", 401)
++    skill = db.session.get(Skill, skill_id)
++    if skill is None or skill.user_id != user_id:
++        return error("Skill rating not found.", 404)
++    db.session.delete(skill)
++    db.session.commit()
++    return {"status": "success"}
+diff --git a/backend/services/job_matching.py b/backend/services/job_matching.py
+index cfce60e..503387d 100644
+--- a/backend/services/job_matching.py
++++ b/backend/services/job_matching.py
+@@ -4,6 +4,7 @@ import re
+ 
+ from services.semantic_encoder import MODEL_ID, MODEL_REVISION, get_encoder
+ from services.skill_catalog import BY_KEY, CATALOG_VERSION, RELATIONS, SKILLS, canonical_key, keyword_keys
++from services.resume_evidence import analyze_resume, alignment_summary
+ 
+ POLICY_VERSION = "pasted-job-comparison-v2"
+ EXTRACTION_VERSION = "skill-extraction-context-v2"
+@@ -154,6 +155,9 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
+         for key, source in found:
+             rows.setdefault(key, []).append(source)
+     support, unmapped_claims = profile_support(snapshot)
++    resume = snapshot.get("resume")
++    resume_analysis = analyze_resume(resume["text"]) if resume else None
++    resume_mentions = {row["skill_key"]: row["passages"] for row in resume_analysis["skills"]} if resume_analysis else {}
+     result_rows = []
+     for skill in SKILLS:
+         key = skill["key"]
+@@ -176,18 +180,21 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
+             guidance = f"All questions in this {skill['label']} attempt were answered correctly. That describes this small diagnostic; use fresh practical tasks for broader evidence."
+         elif assessment:
+             guidance = f"The {skill['label']} attempt was entirely skipped. This skill remains unassessed; collect more evidence."
+-        elif support[key]:
++        elif support[key] or resume_mentions.get(key):
+             guidance = "A candidate claim is recorded. Collect an independent assessment or review before treating proficiency as established."
+         else:
+             guidance = "No matching claim or assessment is recorded. Ask for evidence; absence of a record does not establish a skill deficit."
+         result_rows.append({"skill_key": key, "label": skill["label"], "esco_uri": skill["esco_uri"],
+                             "mapping": "keyword" if direct_sources else "semantic_suggestion",
+                             "job_sources": rows[key], "candidate_claims": support[key], "related_claims": related,
++                            "resume_mentions": resume_mentions.get(key, []),
+                             "assessment": assessment, "guidance": guidance})
+     direct_rows = [row for row in result_rows if row["mapping"] == "keyword"]
+     return {"policy_version": POLICY_VERSION, "extraction_version": EXTRACTION_VERSION,
+             "catalog_version": CATALOG_VERSION, "mode": mode,
+             "candidate_evidence_version": "latest-per-skill-v2",
++            "resume_analysis": resume_analysis,
++            "alignment": alignment_summary(result_rows, bool(resume)),
+             "model": {"id": MODEL_ID, "revision": MODEL_REVISION, "runtime": "onnx-cpu", "pooling": "attention-mask-mean-l2", "max_tokens": 256} if mode == "semantic" else None,
+             "suggestion_policy": {"minimum_cosine": SIMILARITY_THRESHOLD, "minimum_margin": MARGIN_THRESHOLD,
+                                   "validation_status": "heuristic_not_calibrated"} if mode == "semantic" else None,
+diff --git a/backend/services/resume_evidence.py b/backend/services/resume_evidence.py
+new file mode 100644
+index 0000000..405bd5e
+--- /dev/null
++++ b/backend/services/resume_evidence.py
+@@ -0,0 +1,50 @@
++"""Resume mentions remain document claims, never verified proficiency."""
++import re
++from services.skill_catalog import SKILLS, keyword_keys
++
++POLICY_VERSION = "resume-mentions-v1"
++# Deliberately conservative. Keep excluded passages available for the user to review.
++UNCERTAIN = re.compile(r"\b(?:no|not|without|never|learning|learn|interested|interest|aspiring|seeking|beginner|exposure)\b", re.I)
++
++
++def analyze_resume(text):
++    mentions = {item["key"]: [] for item in SKILLS}
++    review = []
++    for raw in re.split(r"[\r\n]+|(?<=[.!?;])\s+", text):
++        line = raw.strip()
++        if not line:
++            continue
++        # Keep bounded complete excerpts, including skill matches late in a long line.
++        words = line.split()
++        for start in range(0, len(words), 50):
++            passage = " ".join(words[start:start + 50])
++            keys = keyword_keys(passage)
++            if not keys:
++                continue
++            if UNCERTAIN.search(line):
++                review.append({"text": passage, "reason": "Learning, interest or negative wording; review before treating it as experience."})
++                continue
++            for key in keys:
++                if passage not in mentions[key]:
++                    mentions[key].append(passage)
++    return {"policy_version": POLICY_VERSION,
++            "skills": [{"skill_key": s["key"], "label": s["label"], "passages": mentions[s["key"]]}
++                       for s in SKILLS if mentions[s["key"]]],
++            "manual_review": review,
++            "interpretation": "Literal mentions in ten supported skill concepts. Review extracted text. Mentions are unverified claims, not proof of proficiency."}
++
++
++def alignment_summary(rows, has_resume):
++    explicit = [row for row in rows if row["mapping"] == "keyword"]
++    def has_evidence(row):
++        return any(c["kind"] in {"project", "certification"} for c in row["candidate_claims"])
++    def answered(row):
++        return bool(row["assessment"] and row["assessment"]["result"]["answered_count"])
++    return {"version": "source-coverage-v1", "resume_included": has_resume,
++            "named_skills": len(explicit),
++            "with_resume_mentions": sum(bool(r["resume_mentions"]) for r in explicit),
++            "with_self_ratings": sum(any(c["kind"] == "self_report" for c in r["candidate_claims"]) for r in explicit),
++            "with_project_or_certificate": sum(has_evidence(r) for r in explicit),
++            "with_answered_diagnostic": sum(answered(r) for r in explicit),
++            "without_recorded_support": [r["label"] for r in explicit if not (r["resume_mentions"] or r["candidate_claims"] or answered(r))],
++            "interpretation": "Counts use only named job skills in the supported catalogue, including preferred mentions. Sources can overlap. Semantic suggestions are excluded; these are coverage counts, not a job-fit score."}
+diff --git a/backend/services/resume_parser.py b/backend/services/resume_parser.py
+new file mode 100644
+index 0000000..2bd9418
+--- /dev/null
++++ b/backend/services/resume_parser.py
+@@ -0,0 +1,73 @@
++"""Bounded, isolated text extraction. No network, OCR, file storage or code execution."""
++import io
++import json
++import sys
++import zipfile
++from xml.etree import ElementTree
++
++MAX_TEXT = 30000
++MAX_FILE = 2 * 1024 * 1024
++
++
++def extract(data, kind):
++    if not data or len(data) > MAX_FILE:
++        raise ValueError("Choose a nonempty resume file up to 2 MB.")
++    if kind == ".txt":
++        text = data.decode("utf-16" if data.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig")
++    elif kind == ".docx":
++        with zipfile.ZipFile(io.BytesIO(data)) as archive:
++            entries = archive.infolist()
++            if len(entries) > 1000 or sum(i.file_size for i in entries) > 12 * 1024 * 1024:
++                raise ValueError("This Word file is too complex. Paste the resume text instead.")
++            info = archive.getinfo("word/document.xml")
++            if info.file_size > 4 * 1024 * 1024 or info.flag_bits & 1:
++                raise ValueError("Use an unencrypted Word file with a smaller document body.")
++            xml = archive.read(info)
++            if b"<!DOCTYPE" in xml.upper() or b"<!ENTITY" in xml.upper():
++                raise ValueError("This Word file contains unsupported XML declarations.")
++            root = ElementTree.fromstring(xml)
++            ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
++            text = "\n".join("".join(node.text or "" for node in paragraph.iter(ns + "t"))
++                             for paragraph in root.iter(ns + "p"))
++    elif kind == ".pdf":
++        from pypdf import PdfReader
++        reader = PdfReader(io.BytesIO(data))
++        if reader.is_encrypted:
++            raise ValueError("Use an unlocked PDF or paste its text.")
++        if len(reader.pages) > 10:
++            raise ValueError("Use a resume of up to 10 pages or paste a relevant excerpt.")
++        chunks = []
++        length = 0
++        for page in reader.pages:
++            chunk = page.extract_text() or ""
++            length += len(chunk)
++            if length > MAX_TEXT:
++                raise ValueError("Resume text exceeds 30,000 characters. Paste a shorter excerpt.")
++            chunks.append(chunk)
++        text = "\n".join(chunks)
++    else:
++        raise ValueError("Choose PDF, DOCX or TXT, or paste your resume text.")
++    text = text.replace("\x00", "").strip()
++    if len(text) > MAX_TEXT:
++        raise ValueError("Resume text exceeds 30,000 characters. Paste a shorter excerpt.")
++    if len(text) < 40:
++        raise ValueError("Not enough readable text was found. Scanned images need OCR; paste the text instead.")
++    return text
++
++
++if __name__ == "__main__":
++    # On POSIX, bound parser memory and CPU as well as the parent's wall timeout.
++    # Windows uses the parent's wall timeout and the same input/page/text limits.
++    try:
++        import resource
++        resource.setrlimit(resource.RLIMIT_AS, (384 * 1024 * 1024, 384 * 1024 * 1024))
++        resource.setrlimit(resource.RLIMIT_CPU, (7, 7))
++    except ImportError:
++        pass
++    try:
++        text = extract(sys.stdin.buffer.read(MAX_FILE + 1), sys.argv[1])
++        print(json.dumps({"text": text}))
++    except (ValueError, UnicodeError) as exc:
++        print(json.dumps({"error": str(exc)}))
++    except Exception:
++        print(json.dumps({"error": "This file could not be read. Try another export or paste the resume text."}))
+diff --git a/backend/services/semantic_encoder.py b/backend/services/semantic_encoder.py
+index 5897274..0d0fc64 100644
+--- a/backend/services/semantic_encoder.py
++++ b/backend/services/semantic_encoder.py
+@@ -7,6 +7,10 @@ import os
+ from pathlib import Path
+ from threading import RLock
+ 
++# The official runtime opt-out must be set before ONNX Runtime initializes.
++# The application performs local inference and does not opt candidates into telemetry.
++os.environ["ORT_DISABLE_TELEMETRY"] = "1"
++
+ MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+ MODEL_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+ FILES = {
+@@ -45,6 +49,7 @@ class MiniLMEncoder:
+         try:
+             import numpy as np
+             import onnxruntime as ort
++            ort.disable_telemetry_events()
+             from tokenizers import Tokenizer
+             for name, expected in FILES.items():
+                 if file_digest(directory / name) != expected["sha256"]:
+diff --git a/backend/static/career.css b/backend/static/career.css
+new file mode 100644
+index 0000000..9d07e5c
+--- /dev/null
++++ b/backend/static/career.css
+@@ -0,0 +1,85 @@
++/* A shared visual system for the complete career workspace. */
++:root{--ink:#172b37;--muted:#61737e;--paper:#f4f7f8;--line:#e0e8eb;--brand:#087f73;--brand-dark:#05675e;--lavender:#e5f5f0;--radius:16px}
++body{font-family:Inter,"Segoe UI",Arial,sans-serif}
++.workspace{grid-template-columns:248px minmax(0,1fr)}
++.workspace-main{min-width:0}
++.sidebar{background:#122630;color:#f4faf9;padding:30px 19px;border:0;overflow-y:auto}
++.sidebar .brand{font-size:1rem;gap:10px}
++.sidebar .brand small{color:#a4b9bd;font-size:.58rem;letter-spacing:1.3px;margin-top:5px}
++.brand-mark{background:#159888;border-radius:11px}
++.sidebar-caption{font-size:.62rem;letter-spacing:1.5px;color:#8fa8ae;margin:46px 13px 14px}
++.sidebar nav{margin:0;gap:6px}
++.nav-button{color:#b9cbcf;padding:13px 12px;font-size:.82rem;gap:12px}
++.nav-button:hover{background:#1c3741;color:white}
++.nav-button.active{background:#23463f;color:#b6f0d8;box-shadow:inset 3px 0 #73d6ad}
++.nav-symbol svg{width:20px;height:20px;display:block}
++.sidebar-note{background:#1b3540;margin-top:45px;padding:19px 15px;border:1px solid #2b4550}
++.sidebar-note strong{display:block;font-size:.85rem;margin-top:13px}
++.sidebar-note p{color:#b0c2c6;font-size:.76rem}
++.sidebar-note .text-button{color:#a3e6ca;font-size:.73rem;padding:8px 0}
++.sidebar-spark svg{width:23px;height:23px;color:#a0dec4}
++.sidebar-footer{font-size:.58rem;color:#93acb2;margin:22px 5px 0;line-height:1.7}
++.topbar{height:76px;padding:0 36px;background:#fff}
++.breadcrumb span{margin:0 11px;color:#b1bec3}.breadcrumb strong{color:#354d59;font-weight:600}
++.avatar{background:#e4f2ee;color:#15735d}
++.content{padding:32px 36px;max-width:1440px}
++.panel{box-shadow:0 3px 12px #12263003}
++.page-intro h1{font-size:2.1rem;letter-spacing:-1px}
++.dashboard-hero{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(260px,1fr);gap:30px;align-items:center;padding:36px;background:linear-gradient(110deg,#e5f2ef,#eef5f2 65%,#f7f7e9);border:1px solid #d9e9e3;border-radius:20px}
++.dashboard-hero h1{font-size:clamp(1.9rem,2.65vw,2.8rem);letter-spacing:-1.2px;line-height:1.14;color:#193b3b}
++.dashboard-hero>div>p{font-size:.88rem;max-width:500px;color:#526e70;margin-bottom:25px}
++.button svg{width:17px;height:17px}
++.journey-card{padding:25px;background:#ffffffdc;border:1px solid #deebe5;border-radius:15px;box-shadow:0 10px 30px #2a51480a}
++.journey-card .eyebrow{font-size:.58rem;margin-bottom:9px}
++.journey-card h2{font-size:1.28rem;margin-bottom:6px}.journey-card>p{font-size:.75rem;color:var(--muted);margin-bottom:20px}
++.journey-row{display:flex;gap:12px;margin-top:18px;align-items:center}
++.journey-row strong{display:block;font-size:.8rem}.journey-row small{display:block;font-size:.68rem;color:var(--muted);margin-top:4px;line-height:1.45}
++.journey-dot{width:30px;height:30px;flex-shrink:0;background:#eff4f4;color:#668082;display:grid;place-items:center;border-radius:50%;font-size:.73rem;font-weight:700}
++.journey-dot.complete{background:#d6efe4;color:#1b7354}
++.dashboard-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:23px 0 35px}
++.dashboard-stat{background:white;border:1px solid var(--line);border-radius:13px;padding:19px 14px;display:flex;text-align:left;align-items:center;gap:12px;color:var(--ink)}
++.dashboard-stat:hover{border-color:#70b6a5;box-shadow:0 3px 16px #1b514810}
++.dashboard-stat>svg{width:37px;height:37px;flex-shrink:0;background:#eef6f3;border-radius:10px;padding:9px;color:#398476}
++.dashboard-stat strong{font-size:1.35rem;display:block;font-weight:700;letter-spacing:-.5px}.dashboard-stat small{font-size:.65rem;color:var(--muted);display:block;margin-top:5px;line-height:1.35}
++.assessment-picker{background:#e9efef}.assessment-picker button.active{color:#086859}
++.info-line{background:#eaf3f0;color:#4b6763}
++.primary-metric .metric-label,.primary-metric small{color:#d9f4ed}
++.match-quote{border-left-color:#94cabc}.match-guidance{background:#f0f6f4}
++.resume-layout{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(240px,1fr);gap:23px;align-items:start}
++#resume-form textarea,#resume-form input[type=text],#resume-form input:not([type]),#profile-skill-form input{width:100%;border:1px solid #cedbe0;border-radius:9px;padding:12px 13px;margin:8px 0 19px;background:white;color:var(--ink);min-height:46px}
++#resume-form textarea{resize:vertical;line-height:1.65;font-size:.84rem}
++.resume-upload{display:flex;align-items:flex-start;gap:16px;background:#f4f9f7;border:1px dashed #afcfc2;padding:20px;border-radius:12px;margin:18px 0 24px}
++.resume-upload>svg{width:30px;height:30px;color:#388777;flex-shrink:0}
++.resume-upload>div{min-width:0;width:100%}.resume-upload p{margin:5px 0 10px;font-size:.74rem}
++.resume-upload input{max-width:100%;font-size:.74rem}.resume-upload input::file-selector-button{background:white;border:1px solid #c2d4ca;padding:8px 11px;border-radius:7px;margin-right:9px;color:#28614e;cursor:pointer}
++.resume-insights h2{margin-bottom:14px}.resume-insights .topic-chips{margin:18px 0}
++.resume-insights .button{width:100%;margin-top:14px}.resume-insights summary{font-size:.8rem;cursor:pointer}
++.resume-next{margin-top:20px}.resume-context{display:flex;align-items:center;gap:15px;padding:17px 20px;background:white;border:1px solid var(--line);border-radius:13px;margin-bottom:23px}
++.resume-context>svg{width:26px;height:26px;color:#448778;flex-shrink:0}.resume-context>div{flex:1;min-width:0}
++.resume-context strong{font-size:.8rem;overflow-wrap:anywhere}.resume-context p{margin:5px 0 0;font-size:.72rem;color:var(--muted)}
++.resume-context .text-button{font-size:.75rem;flex-shrink:0}
++.profile-skills{margin-top:24px}.profile-skills form{display:grid;grid-template-columns:2fr 1fr auto;align-items:end;gap:15px}
++.profile-skills form .button{margin-bottom:19px}
++.profile-skill-list{display:flex;gap:10px;flex-wrap:wrap}.profile-skill-list>div{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:9px;padding:5px 10px;font-size:.78rem}.profile-skill-list .text-button{font-size:.7rem}
++.alignment-panel{margin-bottom:22px}.alignment-panel .eyebrow{font-size:.6rem}.alignment-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:24px 0}
++.alignment-stats>div{border-right:1px solid var(--line);padding-right:12px}.alignment-stats>div:last-child{border:0}
++.alignment-stats strong{display:block;font-size:1.8rem;color:#1f6556;letter-spacing:-1px}.alignment-stats span{font-size:.72rem;color:var(--muted)}
++.alignment-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin-top:18px}
++.alignment-table{width:100%;border-collapse:collapse;font-size:.77rem;min-width:630px;text-align:left}
++.alignment-table th,.alignment-table td{padding:15px 13px;border-bottom:1px solid var(--line);vertical-align:middle}.alignment-table tr:last-child>*{border-bottom:0}
++.alignment-table thead{background:#f1f6f4;color:#4c625d;font-size:.68rem}.alignment-table tbody th{font-weight:650}
++.alignment-table small{display:block;font-weight:400;font-size:.65rem;margin-top:4px;color:var(--muted)}
++.status-dot.positive{color:#156752}.status-dot.positive:before{content:"";display:inline-block;width:6px;height:6px;background:#23956f;border-radius:50%;margin-right:6px}
++.resume-mentions{font-size:.78rem;margin-bottom:18px}.resume-mentions summary{color:#126f5e;cursor:pointer;font-weight:650}.resume-mentions blockquote{font-size:.78rem}
++.job-board{padding:21px}.job-card{transition:border-color .15s,box-shadow .15s}.job-card:hover{border-color:#9ac8b9;box-shadow:0 4px 17px #22584608}
++.job-card h3{font-size:1.05rem;line-height:1.4}.job-card .eyebrow{font-size:.65rem;letter-spacing:1.2px}
++.auth-story{background:#153c3e;color:#f6fcf9;position:relative;overflow:hidden}
++.auth-story:after{content:"";width:380px;height:380px;border:1px solid #40736355;border-radius:50%;position:absolute;right:-180px;bottom:-110px;pointer-events:none}
++.auth-story .intro,.auth-story .muted{color:#c0d8d2}.auth-story .eyebrow{color:#8eddbe}.auth-story .brand small{color:#bad5cd}
++.auth-story .step-number{background:#2e5853;color:#c5eddb;border-color:#416f65}.auth-footer{color:#b2cdc5}
++.auth-card .badge{margin-bottom:19px}.auth-card h2{font-size:2rem;letter-spacing:-.8px}
++@media(min-width:1500px){.content{padding-top:38px}.dashboard-hero{padding:42px}}
++@media(max-width:1200px){.workspace{grid-template-columns:220px minmax(0,1fr)}.content{padding:27px}.sidebar{padding:28px 13px}.dashboard-hero{padding:27px;gap:20px}.dashboard-stats{gap:10px}.dashboard-stat{padding:17px 10px;gap:8px}.dashboard-stat>svg{width:31px;height:31px;padding:7px}.dashboard-stat strong{font-size:1.15rem}.resume-layout{grid-template-columns:minmax(0,1.6fr) minmax(220px,1fr)}}
++@media(max-width:1000px){.workspace{grid-template-columns:190px minmax(0,1fr)}.sidebar .brand{font-size:.87rem}.sidebar .brand-mark{width:35px;height:35px}.nav-button{font-size:.74rem;gap:9px}.dashboard-hero{grid-template-columns:1fr}.journey-card{display:none}.dashboard-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.resume-layout{grid-template-columns:1fr}.resume-layout>aside{display:grid;grid-template-columns:1fr 1fr;gap:18px}.resume-next{margin:0}.alignment-stats{gap:10px}.alignment-stats span{font-size:.68rem}}
++@media(max-width:760px){.workspace{display:block}.sidebar{position:static;height:auto;padding:18px 20px;overflow:visible}.sidebar .brand{font-size:1rem}.sidebar .brand small{font-size:.55rem}.sidebar-caption,.sidebar-note,.sidebar-footer{display:none}.sidebar nav{display:flex;margin-top:20px;overflow-x:auto;gap:8px;padding-bottom:4px}.nav-button{white-space:nowrap;flex-shrink:0;padding:11px 12px;font-size:.72rem}.nav-button.active{box-shadow:none}.nav-symbol{display:block;width:17px}.nav-symbol svg{width:17px;height:17px}.topbar{height:62px;padding:0 20px}.breadcrumb{font-size:.67rem}.breadcrumb span{margin:0 5px}.account-name{display:none}.account .text-button{font-size:.71rem}.content{padding:22px 18px}.dashboard-hero{padding:24px}.dashboard-hero h1{font-size:2rem}.dashboard-hero>div>p{font-size:.8rem}.dashboard-hero .button{font-size:.77rem;padding:11px 13px}.dashboard-stats{gap:11px;margin-bottom:28px}.dashboard-stat{padding:17px 12px}.dashboard-stat strong{font-size:1.14rem}.dashboard-stat small{font-size:.64rem}.page-intro h1{font-size:1.8rem}.resume-layout>aside{display:block}.resume-next{margin-top:18px}.resume-context{align-items:flex-start;flex-wrap:wrap;padding:16px}.resume-context .text-button{margin-left:36px;padding:0;min-height:32px}.resume-context>div{flex-basis:75%}.profile-skills form{grid-template-columns:1fr}.profile-skills form input{margin-bottom:0!important}.profile-skills form .button{margin-bottom:15px}.alignment-panel .section-label{align-items:flex-start;flex-wrap:wrap}.alignment-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.alignment-stats>div:nth-child(2){border:0}.alignment-stats strong{font-size:1.6rem}.resume-upload{padding:15px;gap:10px}.resume-upload>svg{width:24px}.resume-upload input{font-size:.65rem}.panel{padding:21px}.auth-story{padding:28px 25px}.auth-story h1{font-size:2.3rem}.auth-main{padding:35px 25px}}
++@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+diff --git a/backend/static/jobs.js b/backend/static/jobs.js
+index e5a3963..094a628 100644
+--- a/backend/static/jobs.js
++++ b/backend/static/jobs.js
+@@ -27,8 +27,8 @@ function jobsMarkup() {
+   const data = state.jobsData;
+   const filter = state.jobFilters;
+   const pages = Math.max(1, Math.ceil(data.total / data.page_size));
+-  return `<div class="page-intro"><span class="eyebrow">Explore roles in the market</span><h1>Live jobs</h1><p class="muted">Browse public postings from selected employers. Open a role to compare its requirements with your skills, evidence and assessment records.</p></div>
+-    <div class="job-boards">${data.boards.map(boardMarkup).join("")}</div>
++  return `<div class="page-intro"><span class="eyebrow">Explore roles in the market</span><h1>Find your next opportunity.</h1><p class="muted">Browse public postings from selected employers. Open a role to compare its requirements with your resume, skills, supporting work and diagnostic results.</p></div>
++    ${resumeContextMarkup()}<div class="job-boards">${data.boards.map(boardMarkup).join("")}</div>
+     <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>This is a small employer sample. Listings reflect the last successful fetch. Check the employer page for availability, experience requirements and location eligibility; remote does not always mean worldwide.</p></div>
+     <section class="panel job-search"><form id="job-filter-form"><label>Keyword in title or description<input name="q" maxlength="100" value="${escapeHtml(filter.q)}" placeholder="Python, SQL, backend…"></label><label>Location contains<input name="location" maxlength="100" value="${escapeHtml(filter.location)}" placeholder="Bengaluru, APAC, Worldwide…"></label><label>Employer<select name="board"><option value="">All selected employers</option>${data.boards.map((board) => `<option value="${escapeHtml(board.board)}" ${filter.board === board.board ? "selected" : ""}>${escapeHtml(board.employer)}</option>`).join("")}</select></label><button class="button primary" type="submit">Search cached jobs</button></form></section>
+     <div class="section-label"><h2>${data.total} matching listings</h2><span class="small muted">Alphabetical · Not ranked by suitability</span></div>
+@@ -42,7 +42,7 @@ function jobDetailMarkup() {
+   const mode = state.jobCompareDraft.mode;
+   return `<div class="page-intro"><button class="text-button" data-action="back-jobs">← Back to live jobs</button><p class="eyebrow">${escapeHtml(job.employer)} · Greenhouse job board</p><h1>${escapeHtml(job.title)}</h1><p class="muted">${escapeHtml(job.location || "Location not supplied")}</p></div>
+     <section class="panel job-detail-meta"><div class="button-row spread"><span class="badge ${!job.listed || job.stale ? "amber" : "neutral"}">${!job.listed ? "No longer listed on this board" : job.stale ? "Cached posting · Over 24h old" : "Listed at last fetch"}</span><a class="button secondary" href="${escapeHtml(job.source_url)}" target="_blank" rel="noopener noreferrer">Open employer posting ↗</a></div><p class="small muted">Last seen: ${fetchDate(job.last_seen_at)}<br>Last board check: ${fetchDate(job.last_checked_at)}<br>Provider updated: ${job.provider_updated_at ? fetchDate(job.provider_updated_at) : "Not supplied"} (not the publication date)</p>${board.last_error ? `<p class="error-text">Latest refresh failed. The text below is the saved posting from the last successful fetch.</p>` : ""}<p class="small muted">Availability and work-location eligibility must be checked on the employer page. This app does not submit an application.</p></section>
+-    <section class="panel job-compare"><h2>Compare with my evidence</h2><p class="muted">Save this posting’s full text with your current skill claims, active projects, certificates and latest diagnostics for each supported skill. Unverified evidence stays labelled as a claim.</p><form id="job-compare-form"><label>Comparison method<select name="mode"><option value="semantic" ${mode === "semantic" ? "selected" : ""} ${ready ? "" : "disabled"}>Keywords + semantic suggestions</option><option value="keyword" ${mode === "keyword" ? "selected" : ""}>Keyword baseline</option></select></label><button class="button primary" type="submit" ${job.listed ? "" : "disabled"}>Compare with my evidence</button></form>${!ready ? '<p class="small muted">The semantic model is not ready on this server. Keyword comparison is available.</p>' : ""}${!job.listed ? '<p class="small muted">New comparisons are disabled for this removed posting. Earlier saved comparisons remain available.</p>' : ""}</section>
++    ${resumeContextMarkup()}<section class="panel job-compare"><h2>Compare with my evidence</h2><p class="muted">Save this posting’s full text with your saved resume, skill claims, active projects, certificates and latest diagnostics for each supported skill. Unverified evidence stays labelled as a claim.</p><form id="job-compare-form"><label>Comparison method<select name="mode"><option value="semantic" ${mode === "semantic" ? "selected" : ""} ${ready ? "" : "disabled"}>Keywords + semantic suggestions</option><option value="keyword" ${mode === "keyword" ? "selected" : ""}>Keyword baseline</option></select></label><button class="button primary" type="submit" ${job.listed ? "" : "disabled"}>Compare with my evidence</button></form>${!ready ? '<p class="small muted">The semantic model is not ready on this server. Keyword comparison is available.</p>' : ""}${!job.listed ? '<p class="small muted">New comparisons are disabled for this removed posting. Earlier saved comparisons remain available.</p>' : ""}</section>
+     <section class="panel job-description"><h2>Job description</h2><pre class="match-source-text">${escapeHtml(job.description)}</pre><p class="section-note">Source: ${escapeHtml(job.employer)} via Greenhouse. Formatting has been converted to plain text. Posting version ${job.version}.</p></section>`;
+ }
+ 
+@@ -139,6 +139,7 @@ async function handleJobsAction(action, button) {
+       : action === "refresh-board"
+         ? 1
+         : state.jobFilters.page;
++  await loadResume();
+   await loadJobs({ ...state.jobFilters, page });
+   state.selectedJob = null;
+   state.jobCompareDraft = null;
+diff --git a/backend/static/matching.js b/backend/static/matching.js
+index 4e7fd7f..78f247d 100644
+--- a/backend/static/matching.js
++++ b/backend/static/matching.js
+@@ -20,6 +20,7 @@ function clearMatchState() {
+ }
+ 
+ async function loadMatches() {
++  await loadResume();
+   state.matchMetadata = await request("/api/job-matches/metadata");
+   state.matchHistory = (await request("/api/job-matches")).comparisons;
+ }
+@@ -39,8 +40,8 @@ function matchesMarkup() {
+   if (state.comparison && !state.matchDraft) return comparisonMarkup();
+   const draft = state.matchDraft || (state.matchDraft = freshMatchDraft());
+   const ready = state.matchMetadata.semantic_model.available;
+-  return `<div class="page-intro"><span class="eyebrow">Connect your experience to a role</span><h1>Compare a job</h1><p class="muted">Paste a job description to explore its skill requirements alongside your saved claims, projects, certificates and assessments.</p></div>
+-    <div class="match-editor-layout"><section class="panel"><form id="match-form"><label>Job title<input name="title" maxlength="160" value="${escapeHtml(draft.title)}" placeholder="Junior Python Backend Developer" required></label><label>Job description<textarea name="description" rows="10" minlength="20" maxlength="8000" aria-describedby="match-description-hint" placeholder="Paste the responsibilities and skill requirements here…" required>${escapeHtml(draft.description)}</textarea><span class="field-hint" id="match-description-hint">20–8,000 characters. Preserve headings such as Requirements and Preferred skills.</span></label><label>Source link (optional)<input name="source_url" type="url" maxlength="2048" value="${escapeHtml(draft.source_url)}" placeholder="https://company.example/careers/job"></label><label>Comparison method<select name="mode"><option value="semantic" ${draft.mode === "semantic" ? "selected" : ""} ${ready ? "" : "disabled"}>Keywords + semantic suggestions</option><option value="keyword" ${draft.mode === "keyword" ? "selected" : ""}>Keyword baseline</option></select></label>${ready ? '<p class="small muted">Semantic suggestions use a pretrained model running locally. Suggested links still need review.</p>' : '<p class="small muted">The semantic model is not ready on this server. Keyword comparison is available.</p>'}<div class="button-row evidence-form-actions"><button class="button primary" type="submit">Compare and save</button><button class="button secondary" type="button" data-action="demo-match">Use example description</button></div></form></section>
++  return `<div class="page-intro"><span class="eyebrow">Connect your experience to a role</span><h1>Compare a job</h1><p class="muted">Paste a job description to explore its skill requirements alongside your saved resume, skill ratings, projects, certificates and assessments.</p></div>
++    ${resumeContextMarkup()}<div class="match-editor-layout"><section class="panel"><form id="match-form"><label>Job title<input name="title" maxlength="160" value="${escapeHtml(draft.title)}" placeholder="Junior Python Backend Developer" required></label><label>Job description<textarea name="description" rows="10" minlength="20" maxlength="8000" aria-describedby="match-description-hint" placeholder="Paste the responsibilities and skill requirements here…" required>${escapeHtml(draft.description)}</textarea><span class="field-hint" id="match-description-hint">20–8,000 characters. Preserve headings such as Requirements and Preferred skills.</span></label><label>Source link (optional)<input name="source_url" type="url" maxlength="2048" value="${escapeHtml(draft.source_url)}" placeholder="https://company.example/careers/job"></label><label>Comparison method<select name="mode"><option value="semantic" ${draft.mode === "semantic" ? "selected" : ""} ${ready ? "" : "disabled"}>Keywords + semantic suggestions</option><option value="keyword" ${draft.mode === "keyword" ? "selected" : ""}>Keyword baseline</option></select></label>${ready ? '<p class="small muted">Semantic suggestions use a pretrained model running locally. Suggested links still need review.</p>' : '<p class="small muted">The semantic model is not ready on this server. Keyword comparison is available.</p>'}<div class="button-row evidence-form-actions"><button class="button primary" type="submit">Compare and save</button><button class="button secondary" type="button" data-action="demo-match">Use example description</button></div></form></section>
+     <aside class="panel evidence-guide"><span class="badge neutral">Research prototype</span><h2>What this comparison shows</h2><p>Named skills and possible semantic links are displayed separately. A missing record means we need more evidence.</p><p>Each comparison saves the job text and profile records it used. Later profile edits do not rewrite a saved comparison.</p><h3>Current vocabulary</h3><div class="topic-chips">${state.matchMetadata.skills.map((skill) => `<span>${escapeHtml(skill.label)}</span>`).join("")}</div><p class="section-note">This is a pasted description, not a live vacancy check. The example description is fictional.</p></aside></div>${matchHistoryMarkup()}`;
+ }
+ 
+@@ -61,7 +62,7 @@ function comparisonSkillMarkup(row) {
+   const supported = state.assessmentCatalog.some(
+     (item) => item.skill_key === row.skill_key,
+   );
+-  return `<article class="panel match-skill"><div class="button-row spread"><h2>${escapeHtml(row.label)}</h2><span class="badge ${row.mapping === "keyword" ? "neutral" : "amber"}">${row.mapping === "keyword" ? "Named in description" : "Semantic suggestion · Review"}</span></div><div class="match-skill-columns"><section><h3>Job text</h3>${row.job_sources.map((source) => `<blockquote class="match-quote">${escapeHtml(source.text)}<footer>${source.importance === "required" ? "Required wording" : source.importance === "optional" ? "Optional / preferred wording" : "Mentioned in description"} · ${source.method === "keyword" ? "Keyword / alias" : `Semantic suggestion · cosine ${Number(source.similarity).toFixed(3)}`}</footer></blockquote>`).join("")}</section><section><h3>Your saved evidence</h3>${row.candidate_claims.length ? `<ul class="match-claims">${row.candidate_claims.map((claim) => claimMarkup(claim)).join("")}</ul>` : '<p class="small muted">No direct skill claim recorded for this concept.</p>'}${row.related_claims.length ? `<details class="evidence-details"><summary>Related claims (${row.related_claims.length})</summary><p class="small muted">Related technologies are not treated as equivalent skills.</p><ul class="match-claims">${row.related_claims.map((claim) => claimMarkup(claim, true)).join("")}</ul></details>` : ""}${assessment ? `<div class="match-assessment"><span class="badge neutral">${escapeHtml(row.label)} diagnostic snapshot</span><p>${escapeHtml(percent(assessment.result.accuracy_on_answered_percent))} accuracy · ${assessment.result.answered_count}/${assessment.result.question_count} answered</p><ul>${assessment.result.topics.map((topic) => `<li>${escapeHtml(topicLabel(topic.topic))}: ${topic.correct_count} correct, ${topic.incorrect_count} incorrect, ${topic.unanswered_count} unassessed</li>`).join("")}</ul><button class="text-button" data-action="open-attempt" data-id="${escapeHtml(assessment.attempt_id)}">Open ${escapeHtml(row.label)} result & roadmap →</button></div>` : `<p class="small muted">No assessment result recorded for this skill.</p>${supported ? `<button class="button secondary" data-action="start" data-skill="${escapeHtml(row.skill_key)}">Assess ${escapeHtml(row.label)} →</button>` : '<p class="small muted">A diagnostic for this skill is not available yet.</p>'}`}</section></div><p class="match-guidance">${escapeHtml(row.guidance)}</p></article>`;
++  return `<article class="panel match-skill"><div class="button-row spread"><h2>${escapeHtml(row.label)}</h2><span class="badge ${row.mapping === "keyword" ? "neutral" : "amber"}">${row.mapping === "keyword" ? "Named in description" : "Semantic suggestion · Review"}</span></div><div class="match-skill-columns"><section><h3>Job text</h3>${row.job_sources.map((source) => `<blockquote class="match-quote">${escapeHtml(source.text)}<footer>${source.importance === "required" ? "Required wording" : source.importance === "optional" ? "Optional / preferred wording" : "Mentioned in description"} · ${source.method === "keyword" ? "Keyword / alias" : `Semantic suggestion · cosine ${Number(source.similarity).toFixed(3)}`}</footer></blockquote>`).join("")}</section><section><h3>Your saved evidence</h3>${row.resume_mentions?.length ? `<details class="resume-mentions"><summary>Resume mentions (${row.resume_mentions.length}) · Unverified</summary>${row.resume_mentions.map((text) => `<blockquote class="match-quote">${escapeHtml(text)}</blockquote>`).join("")}</details>` : ""}${row.candidate_claims.length ? `<ul class="match-claims">${row.candidate_claims.map((claim) => claimMarkup(claim)).join("")}</ul>` : '<p class="small muted">No direct skill claim recorded for this concept.</p>'}${row.related_claims.length ? `<details class="evidence-details"><summary>Related claims (${row.related_claims.length})</summary><p class="small muted">Related technologies are not treated as equivalent skills.</p><ul class="match-claims">${row.related_claims.map((claim) => claimMarkup(claim, true)).join("")}</ul></details>` : ""}${assessment ? `<div class="match-assessment"><span class="badge neutral">${escapeHtml(row.label)} diagnostic snapshot</span><p>${escapeHtml(percent(assessment.result.accuracy_on_answered_percent))} accuracy · ${assessment.result.answered_count}/${assessment.result.question_count} answered</p><ul>${assessment.result.topics.map((topic) => `<li>${escapeHtml(topicLabel(topic.topic))}: ${topic.correct_count} correct, ${topic.incorrect_count} incorrect, ${topic.unanswered_count} unassessed</li>`).join("")}</ul><button class="text-button" data-action="open-attempt" data-id="${escapeHtml(assessment.attempt_id)}">Open ${escapeHtml(row.label)} result & roadmap →</button></div>` : `<p class="small muted">No assessment result recorded for this skill.</p>${supported ? `<button class="button secondary" data-action="start" data-skill="${escapeHtml(row.skill_key)}">Assess ${escapeHtml(row.label)} →</button>` : '<p class="small muted">A diagnostic for this skill is not available yet.</p>'}`}</section></div><p class="match-guidance">${escapeHtml(row.guidance)}</p></article>`;
+ }
+ 
+ function comparisonMarkup() {
+@@ -72,9 +73,9 @@ function comparisonMarkup() {
+   const canCompare =
+     otherMode === "keyword" || state.matchMetadata.semantic_model.available;
+   return `<div class="page-intro result-heading"><div><span class="eyebrow">Saved job comparison</span><h1>${escapeHtml(saved.title)}</h1><p class="muted">${escapeHtml(dateLabel(saved.created_at))} · ${saved.mode === "semantic" ? "Keywords + semantic suggestions" : "Keyword baseline"}</p></div><button class="button secondary" data-action="new-match">New comparison</button></div>
+-    <section class="panel match-summary"><div><strong>${summary.explicit_skill_mentions}</strong><span>Named skill concepts</span></div><div><strong>${summary.explicit_mentions_with_claims}</strong><span>Named concepts with your claims</span></div><div><strong>${summary.semantic_suggestions}</strong><span>Suggested concepts to review</span></div><div><strong>${summary.skills_with_assessment_records}</strong><span>Concepts with an assessment record</span></div></section>
++    ${alignmentMarkup(saved)}<section class="panel match-summary"><div><strong>${summary.explicit_skill_mentions}</strong><span>Named skill concepts</span></div><div><strong>${summary.explicit_mentions_with_claims}</strong><span>Named concepts with your claims</span></div><div><strong>${summary.semantic_suggestions}</strong><span>Suggested concepts to review</span></div><div><strong>${summary.skills_with_assessment_records}</strong><span>Concepts with an assessment record</span></div></section>
+     <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>${escapeHtml(result.interpretation)}</p></div>
+-    <section class="panel roadmap-entry"><div><h2>Added new assessment evidence?</h2><p class="muted">Save a new comparison using your latest records. This original snapshot stays unchanged.</p></div><button class="button secondary" data-action="repeat-comparison">Compare with latest evidence →</button></section>
++    <section class="panel roadmap-entry"><div><h2>Updated your resume or evidence?</h2><p class="muted">Save a new comparison using your latest records. This original snapshot stays unchanged.</p></div><button class="button secondary" data-action="repeat-comparison">Compare with latest evidence →</button></section>
+     <div class="section-label"><h2>Skills and supporting records</h2>${canCompare ? `<button class="text-button" data-action="compare-${otherMode}">Try ${otherMode === "keyword" ? "keyword baseline" : "semantic suggestions"}</button>` : ""}</div>
+     ${result.skills.length ? `<div class="match-skill-list">${result.skills.map(comparisonSkillMarkup).join("")}</div>` : '<div class="empty-state"><div><strong>No skill mappings found in this vocabulary</strong><p>The job may require skills outside the current scope. This does not mean you are unsuitable.</p></div></div>'}
+     ${result.manual_review.length ? `<section class="panel match-review"><h2>Read these passages manually</h2><p class="small muted">These passages need context before their skills can be treated as candidate requirements.</p>${result.manual_review.map((item) => `<blockquote class="match-quote">${escapeHtml(item.text)}<footer>${escapeHtml(item.reason || "Review this passage before using it as a requirement.")}</footer></blockquote>`).join("")}</section>` : ""}
+diff --git a/backend/static/resume.js b/backend/static/resume.js
+new file mode 100644
+index 0000000..b9e0906
+--- /dev/null
++++ b/backend/static/resume.js
+@@ -0,0 +1,86 @@
++"use strict";
++
++function uiIcon(name) {
++  const paths = {
++    home: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
++    resume: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 12h8M8 16h6"/>',
++    jobs: '<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V4h8v3M3 12l9 3 9-3M12 12v5"/>',
++    matches: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5m-13-11 2 2 4-4"/>',
++    evidence: '<path d="m12 2 9 5-9 5-9-5 9-5Zm-9 10 9 5 9-5M3 17l9 5 9-5"/>',
++    history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5m4-1v5l3 2"/>',
++    arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
++  };
++  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.home}</svg>`;
++}
++
++async function loadResume() {
++  state.resumeData = await request("/api/resume");
++}
++
++function resetResumeDraft() {
++  state.resumeDraft = {
++    text: state.resumeData?.resume?.text || "",
++    source_name: state.resumeData?.resume?.source_name || "My resume",
++    version: state.resumeData?.version || 0,
++  };
++  state.resumeDirty = false;
++  state.resumeFileStatus = "";
++}
++
++function dashboardLeadMarkup() {
++  const done = state.history.filter((a) => a.status === "submitted").length;
++  const evidence = state.evidence.filter((e) => !e.archived).length;
++  const resume = state.resumeData?.resume;
++  return `<section class="dashboard-hero"><div><span class="eyebrow">YOUR NEXT CAREER MOVE</span><h1>Turn your experience<br>into a clearer next step.</h1><p>Explore live opportunities. See how your resume and evidence connect to a role, then build the skills that need attention.</p><div class="button-row"><button class="button primary" data-action="jobs">Explore live jobs ${uiIcon("arrow")}</button><button class="button secondary" data-action="resume">${resume ? "Review my resume" : "Add my resume"}</button></div></div><div class="journey-card"><span class="eyebrow">YOUR WORKSPACE</span><h2>Hello, ${escapeHtml(state.user.name.split(" ")[0])}.</h2><p>One place for your next opportunity.</p><div class="journey-row"><span class="journey-dot ${resume ? "complete" : ""}">1</span><div><strong>Build your profile</strong><small>${resume ? "Resume saved · ready to compare" : "Add a resume and your skill claims"}</small></div></div><div class="journey-row"><span class="journey-dot">2</span><div><strong>Find a role</strong><small>Browse selected employer job boards</small></div></div><div class="journey-row"><span class="journey-dot ${done ? "complete" : ""}">3</span><div><strong>Support your skills</strong><small>${done ? `${done} submitted diagnostic${done === 1 ? "" : "s"}` : "Assess SQL, Python or HTTP foundations"}</small></div></div></div></section>
++  <div class="dashboard-stats"><button data-action="resume" class="dashboard-stat">${uiIcon("resume")}<span><strong>${resume ? "Ready" : "Add resume"}</strong><small>Resume for comparisons</small></span></button><button data-action="jobs" class="dashboard-stat">${uiIcon("jobs")}<span><strong>${state.jobsData?.total ?? 0}</strong><small>Listings in the current cache</small></span></button><button data-action="evidence" class="dashboard-stat">${uiIcon("evidence")}<span><strong>${evidence}</strong><small>Projects and certificates</small></span></button><button data-action="history" class="dashboard-stat">${uiIcon("history")}<span><strong>${done}</strong><small>Submitted diagnostics</small></span></button></div>
++  <div class="section-label"><div><span class="eyebrow">BUILD YOUR EVIDENCE</span><h2>A focused next step</h2></div><span class="small muted">Three foundation diagnostics</span></div>`;
++}
++
++function resumeMarkup() {
++  if (!state.resumeDraft) resetResumeDraft();
++  const draft = state.resumeDraft;
++  const saved = state.resumeData.resume;
++  const analysis = state.resumeData.analysis;
++  return `<div class="page-intro"><span class="eyebrow">THE EXPERIENCE YOU BRING</span><h1>Resume & skills</h1><p class="muted">Add your resume, check the extracted text and save it for job comparisons. Your skills and assessment evidence stay visible alongside it.</p></div>
++  <div class="resume-layout"><section class="panel"><div class="section-label"><h2>Your resume</h2><span id="resume-status" class="badge ${state.resumeDirty ? "amber" : saved ? "green" : "neutral"}">${state.resumeDirty ? "Unsaved changes" : saved ? `Saved · version ${saved.version}` : "No resume saved"}</span></div><form id="resume-form"><div class="resume-upload">${uiIcon("resume")}<div><label for="resume-file">Choose a resume file</label><p class="small muted">PDF, DOCX or TXT · Up to 2 MB · PDF up to 10 pages</p><input id="resume-file" type="file" accept=".pdf,.docx,.txt"><p id="resume-file-status" class="small" role="status">${escapeHtml(state.resumeFileStatus || "Or paste your resume text below.")}</p></div></div><label>Resume name<input name="source_name" maxlength="160" required value="${escapeHtml(draft.source_name)}"></label><label>Review and edit resume text<textarea name="text" rows="13" minlength="40" maxlength="30000" required placeholder="Paste your experience, projects, education and skills here…">${escapeHtml(draft.text)}</textarea></label><p class="field-hint">Check reading order, dates and skill names before saving. Scanned PDFs need text pasted from an OCR tool. DOCX headers, footers and graphics may be omitted.</p><div class="button-row"><button class="button primary" type="submit">Save resume</button><button class="button secondary" type="button" data-action="reload-resume">Use saved version</button>${saved ? '<button class="text-button" type="button" data-action="remove-resume">Remove saved resume</button>' : ""}</div><p class="section-note">Only the reviewed text is saved to your account. The original upload is not retained. Saved job comparisons keep the resume version they used, even after removal here.</p></form></section>
++  <aside><section class="panel resume-insights"><span class="eyebrow">FROM YOUR SAVED RESUME</span><h2>Skill mentions</h2>${saved ? `<p class="small muted">${escapeHtml(saved.source_name)} · ${escapeHtml(dateLabel(saved.updated_at))}</p>` : '<p class="muted">Save a resume to see mentions in the supported skill catalogue.</p>'}<div class="topic-chips">${analysis.skills.map((s) => `<span>${escapeHtml(s.label)}</span>`).join("") || '<span>No supported mentions yet</span>'}</div><p class="small muted">These are literal mentions, not verified proficiency. Job comparisons also include your separate skill ratings, projects, certificates and diagnostics.</p>${analysis.manual_review.length ? `<details><summary>${analysis.manual_review.length} passages need review</summary>${analysis.manual_review.map((item) => `<blockquote class="match-quote">${escapeHtml(item.text)}<footer>${escapeHtml(item.reason)}</footer></blockquote>`).join("")}</details>` : ""}<button class="button secondary" data-action="jobs">Find a role to compare ${uiIcon("arrow")}</button></section><section class="panel resume-next"><h2>Make your work visible</h2><p class="small muted">Add a project and describe your own contribution. Link certificates to the skills they cover.</p><button class="text-button" data-action="evidence">Manage supporting evidence →</button></section></aside></div>
++  <section class="panel profile-skills"><div class="section-label"><h2>Your self-reported skills</h2><span class="badge neutral">Your own ratings</span></div><form id="profile-skill-form"><label>Skill<input name="skill_name" list="profile-skill-options" maxlength="80" placeholder="Python, SQL, Docker…" required><datalist id="profile-skill-options">${state.resumeData.catalogue.map((s) => `<option value="${escapeHtml(s.label)}"></option>`).join("")}</datalist></label><label>Rating from 1 to 10<input type="number" name="proficiency" min="1" max="10" step="1" required placeholder="1–10"></label><button class="button secondary" type="submit">Add skill rating</button></form><div class="profile-skill-list">${state.skills.map((s) => `<div><span>${escapeHtml(s.skill_name)}</span><strong>${s.proficiency}/10</strong><button class="text-button" data-action="remove-skill" data-id="${s.id}" aria-label="Remove ${escapeHtml(s.skill_name)} rating">Remove</button></div>`).join("") || '<p class="small muted">No skill ratings recorded. Resume mentions are kept separate.</p>'}</div></section>`;
++}
++
++async function saveResume(values) {
++  state.resumeDraft = { ...state.resumeDraft, text: values.get("text"), source_name: values.get("source_name") };
++  state.resumeData = await request("/api/resume", { method: "PUT", body: state.resumeDraft });
++  resetResumeDraft();
++  renderShell();
++  showNotice("Resume saved. New job comparisons will include this version.", true);
++}
++
++async function uploadResume(file) {
++  if (!file) return;
++  if (file.size > 2 * 1024 * 1024) throw new Error("Choose a resume file up to 2 MB.");
++  const status = document.querySelector("#resume-file-status");
++  status.textContent = `Reading ${file.name}…`;
++  const body = new FormData(); body.append("file", file);
++  try {
++    const data = await request("/api/resume/extract", { method: "POST", body, timeout: 20000 });
++    state.resumeDraft.text = data.text;
++    state.resumeDraft.source_name = data.source_name;
++    state.resumeDirty = true;
++    state.resumeFileStatus = `${data.source_name} loaded successfully. Review the text below, then Save resume.`;
++    renderShell();
++  } catch (error) {
++    status.textContent = "File could not be loaded. Your existing draft text is still below.";
++    throw error;
++  }
++}
++
++function resumeContextMarkup() {
++  const resume = state.resumeData?.resume;
++  return `<div class="resume-context">${uiIcon("resume")}<div><strong>${resume ? `Resume included: ${escapeHtml(resume.source_name)}` : "Add a resume for a fuller comparison"}</strong><p>${resume ? `Saved version ${resume.version} will be captured with this comparison.` : "You can compare your saved skills and evidence now, or add your resume first."}</p></div><button class="text-button" type="button" data-action="resume">${resume ? "Review resume" : "Add resume"} →</button></div>`;
++}
++
++function alignmentMarkup(saved) {
++  const a = saved.result.alignment;
++  if (!a) return ""; // Older saved results remain readable without recomputing them.
++  return `<section class="panel alignment-panel"><div class="section-label"><div><span class="eyebrow">YOUR RECORDS AGAINST THIS ROLE</span><h2>Alignment at a glance</h2></div><span class="badge neutral">${a.named_skills} named skills in scope</span></div><p class="small muted">${escapeHtml(a.interpretation)}</p><div class="alignment-stats"><div><strong>${a.resume_included && a.named_skills ? `${a.with_resume_mentions}/${a.named_skills}` : "—"}</strong><span>Resume mentions</span></div><div><strong>${a.named_skills ? `${a.with_self_ratings}/${a.named_skills}` : "—"}</strong><span>Self-rated skills</span></div><div><strong>${a.named_skills ? `${a.with_project_or_certificate}/${a.named_skills}` : "—"}</strong><span>Project or certificate tags</span></div><div><strong>${a.named_skills ? `${a.with_answered_diagnostic}/${a.named_skills}` : "—"}</strong><span>Answered diagnostics</span></div></div><p class="small muted">${!a.resume_included ? "No resume was included in this saved comparison. " : `Resume: ${escapeHtml(saved.candidate_snapshot.resume.source_name)} · version ${saved.candidate_snapshot.resume.version}. `}${a.without_recorded_support.length ? `Collect evidence for: ${escapeHtml(a.without_recorded_support.join(", "))}.` : a.named_skills ? "Each named skill has at least one record. That record may still be an unverified claim." : "No named skills were mapped; coverage cannot be assessed."}</p><div class="alignment-scroll" tabindex="0" role="region" aria-label="Skill evidence alignment"><table class="alignment-table"><thead><tr><th scope="col">Job skill</th><th scope="col">Resume</th><th scope="col">Skill rating</th><th scope="col">Projects / certificates</th><th scope="col">Diagnostic evidence</th></tr></thead><tbody>${saved.result.skills.map((r) => `<tr><th scope="row">${escapeHtml(r.label)}<small>${r.mapping === "keyword" ? "Named mention" : "Suggested · review"}</small></th><td>${r.resume_mentions?.length ? '<span class="status-dot positive">Mentioned</span>' : a.resume_included ? "Not found" : "Not supplied"}</td><td>${r.candidate_claims.filter((c) => c.kind === "self_report").map((c) => `${c.rating}/10`).join(", ") || "Not recorded"}</td><td>${r.candidate_claims.filter((c) => c.kind !== "self_report").length || "None"}<small>Unverified records</small></td><td>${r.assessment ? `${r.assessment.result.answered_count}/${r.assessment.result.question_count} answered` : "Not assessed"}${r.assessment?.result.incorrect_count ? `<small>${r.assessment.result.incorrect_count} incorrect · review topics</small>` : ""}</td></tr>`).join("")}</tbody></table></div></section>`;
++}
+diff --git a/backend/static/workspace.js b/backend/static/workspace.js
+index 234e79f..f0e70bb 100644
+--- a/backend/static/workspace.js
++++ b/backend/static/workspace.js
+@@ -20,6 +20,10 @@ const state = {
+   evidenceEditor: null,
+   evidenceDirty: false,
+   showArchived: false,
++  resumeData: null,
++  resumeDraft: null,
++  resumeDirty: false,
++  resumeFileStatus: "",
+   matchMetadata: null,
+   matchHistory: [],
+   comparison: null,
+@@ -70,7 +74,7 @@ const skillClaims = () => {
+ const skillLabel = (key) =>
+   state.assessmentCatalog.find((item) => item.skill_key === key)?.label || key;
+ const topicLabel = (value) => value.replaceAll("_", " ");
+-const brand = `<div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M7 24V8l18 16V8M7 8h7M18 24h7" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Career Navigator<small>ASSESS. REFLECT. GROW.</small></span></div>`;
++const brand = `<div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M7 24V8l18 16V8M7 8h7M18 24h7" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Career Navigator<small>YOUR CAREER WORKSPACE</small></span></div>`;
+ 
+ function showNotice(message, success = false) {
+   clearTimeout(noticeTimer);
+@@ -88,7 +92,7 @@ async function request(
+   { method = "GET", body, auth = true, retry = true, timeout = 15000 } = {},
+ ) {
+   const headers = { Accept: "application/json" };
+-  if (body !== undefined) headers["Content-Type"] = "application/json";
++  if (body !== undefined && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
+   if (auth) headers.Authorization = `Bearer ${state.token}`;
+   let response;
+   try {
+@@ -97,7 +101,7 @@ async function request(
+       headers,
+       cache: "no-store",
+       credentials: "omit",
+-      body: body === undefined ? undefined : JSON.stringify(body),
++      body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
+       signal: AbortSignal.timeout(timeout),
+     });
+   } catch {
+@@ -198,25 +202,25 @@ async function withBusy(button, action) {
+ function renderAuth(email = "") {
+   const registering = state.authMode === "register";
+   root.innerHTML = `<div class="auth-layout">
+-    <aside class="auth-story">${brand}<div><span class="eyebrow">Your next step starts with evidence</span><h1>Know where you are.<br>See what comes next.</h1><p class="intro">Explore your SQL, Python and HTTP API knowledge, understand your results, and make your next practice session count.</p>
+-      <div class="story-steps"><div class="story-detail"><span class="step-number">01</span><div><strong>Bring your perspective</strong><p class="muted">Record how you currently rate a skill.</p></div></div><div class="story-detail"><span class="step-number">02</span><div><strong>Put it into practice</strong><p class="muted">Choose a skill and answer six foundation questions.</p></div></div><div class="story-detail"><span class="step-number">03</span><div><strong>Explore the evidence</strong><p class="muted">Review feedback and areas that need more practice or assessment.</p></div></div></div>
++    <aside class="auth-story">${brand}<div><span class="eyebrow">Your next step starts with evidence</span><h1>Know where you are.<br>See what comes next.</h1><p class="intro">Bring your resume, discover live opportunities and build evidence for the skills that matter to your next role.</p>
++      <div class="story-steps"><div class="story-detail"><span class="step-number">01</span><div><strong>Make your experience visible</strong><p class="muted">Add your resume, skills, projects and certificates.</p></div></div><div class="story-detail"><span class="step-number">02</span><div><strong>Find your next opportunity</strong><p class="muted">Compare selected live job postings with your records.</p></div></div><div class="story-detail"><span class="step-number">03</span><div><strong>Build a path forward</strong><p class="muted">Take a focused diagnostic and follow linked learning resources.</p></div></div></div>
+     </div><p class="auth-footer">AI Career Navigator · Research prototype<br>SQL · Python · REST API HTTP foundations</p></aside>
+-    <main class="auth-main" id="main-content"><div class="auth-card"><span class="badge neutral">Candidate workspace</span><h2>${registering ? "Create your account" : "Welcome back"}</h2><p class="muted">${registering ? "Start your assessment journey." : "Sign in to your assessment workspace."}</p>
++    <main class="auth-main" id="main-content"><div class="auth-card"><span class="badge neutral">Candidate workspace</span><h2>${registering ? "Create your account" : "Welcome back"}</h2><p class="muted">${registering ? "Create a workspace for your next career move." : "Continue building your career with evidence."}</p>
+       <div class="tabs" aria-label="Account access"><button type="button" data-action="login-tab" class="${registering ? "" : "active"}" aria-pressed="${!registering}">Sign in</button><button type="button" data-action="register-tab" class="${registering ? "active" : ""}" aria-pressed="${registering}">Create account</button></div>
+       <form id="auth-form">${registering ? '<label>Full name<input name="name" type="text" autocomplete="name" maxlength="120" required></label>' : ""}<label>Email<input name="email" type="email" autocomplete="username" value="${escapeHtml(email)}" required></label><label>Password<input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" ${registering ? 'minlength="8"' : ""} required></label>${registering ? '<p class="small muted">Use at least 8 characters.</p>' : ""}<button class="button primary" type="submit">${registering ? "Create account & continue" : "Sign in to workspace"} <span aria-hidden="true">→</span></button></form>
+       <p class="auth-note">Draft assessment content awaiting human review. Results describe these questions; they are not a validated proficiency rating.</p></div></main></div>`;
+ }
+ 
+ function renderShell() {
+-  const onHistory = state.view === "history";
+-  const onEvidence = state.view === "evidence";
+-  const onMatches = state.view === "matches";
+-  const onJobs = state.view === "jobs";
+-  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence || onMatches || onJobs ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence && !onMatches && !onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button><button class="nav-button ${onMatches ? "active" : ""}" data-action="matches" ${onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">⌕</span>Compare a job</button><button class="nav-button ${onJobs ? "active" : ""}" data-action="jobs" ${onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◎</span>Live jobs</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>Three foundation diagnostics<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onJobs ? "Live jobs" : onMatches ? "Job comparison" : onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "Assessments"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
++  const links = [["overview", "home", "Overview"], ["resume", "resume", "Resume & skills"], ["jobs", "jobs", "Live opportunities"], ["matches", "matches", "Job alignment"], ["evidence", "evidence", "Projects & certificates"], ["history", "history", "My assessments"]];
++  const active = ["quiz", "results", "roadmap"].includes(state.view) ? "history" : state.view;
++  const label = links.find(([key]) => key === active)?.[2] || "Workspace";
++  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<span class="sidebar-caption">CANDIDATE WORKSPACE</span><nav aria-label="Main navigation">${links.map(([key, icon, title]) => `<button class="nav-button ${active === key ? "active" : ""}" data-action="${key}" ${active === key ? 'aria-current="page"' : ""}><span class="nav-symbol">${uiIcon(icon)}</span>${title}</button>`).join("")}</nav><div class="sidebar-note"><span class="sidebar-spark">${uiIcon("evidence")}</span><strong>Let your work speak.</strong><p>Connect your experience with the next opportunity.</p><button class="text-button" data-action="evidence">Build your evidence →</button></div><span class="sidebar-footer">AI Career Navigator · Research prototype</span></aside><div class="workspace-main"><header class="topbar"><span class="breadcrumb">My workspace <span>/</span> <strong>${label}</strong></span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
+   const main = document.querySelector("#main-content");
+   if (state.view === "quiz") main.innerHTML = quizMarkup();
+   else if (state.view === "results") main.innerHTML = resultsMarkup();
+   else if (state.view === "roadmap") main.innerHTML = roadmapMarkup();
++  else if (state.view === "resume") main.innerHTML = resumeMarkup();
+   else if (state.view === "evidence") main.innerHTML = evidenceMarkup();
+   else if (state.view === "matches") main.innerHTML = matchesMarkup();
+   else if (state.view === "jobs") main.innerHTML = jobsMarkup();
+@@ -320,7 +324,7 @@ function overviewMarkup() {
+       attempt.skill_key === state.selectedSkill &&
+       attempt.status === "in_progress",
+   );
+-  return `<div class="page-intro"><span class="eyebrow">Your learning workspace</span><h1>Build a clearer picture of your skills.</h1><p class="muted">Choose a skill, add your perspective, and use assessment evidence to plan your next steps.</p></div>
++  return `${dashboardLeadMarkup()}
+     <div class="tabs assessment-picker" role="group" aria-label="Choose assessment skill">${state.assessmentCatalog.map((item) => `<button type="button" data-action="select-assessment" data-skill="${escapeHtml(item.skill_key)}" class="${state.selectedSkill === item.skill_key ? "active" : ""}" aria-pressed="${state.selectedSkill === item.skill_key}">${escapeHtml(item.label)}</button>`).join("")}</div>
+     <div class="overview-grid"><section class="panel assessment-card"><div class="button-row spread"><span class="badge">Available assessment</span><span class="small muted">Foundations · v1</span></div><h2>${escapeHtml(meta.title)}</h2><p class="muted">A short diagnostic sampling the topics below. Use it to identify what to practise or assess next.</p><div class="topic-chips">${meta.topics.map((topic) => `<span>${escapeHtml(topicLabel(topic))}</span>`).join("")}</div><div class="assessment-meta"><div><strong>${meta.question_count}</strong><span>Questions</span></div><div><strong>${meta.topics.length}</strong><span>Topics</span></div><div><strong>Untimed</strong><span>Go at your pace</span></div></div><button class="button primary" data-action="${pending ? "open-attempt" : "start"}" data-skill="${escapeHtml(meta.skill_key)}" ${pending ? `data-id="${escapeHtml(pending.id)}"` : ""}>${pending ? "Continue assessment" : `Start ${escapeHtml(meta.label)} assessment`} <span aria-hidden="true">→</span></button><p class="section-note">You may skip a question. It will remain unassessed.</p></section>
+     <section class="panel claim-panel"><span class="eyebrow">Your perspective</span><h2>Self-reported ${escapeHtml(meta.label)} skill</h2>${claims.length ? (claims.length === 1 ? `<div class="claim-value">${escapeHtml(claims[0].proficiency)}<small> / 10</small></div>` : `<ul class="claim-list">${claims.map((claim) => `<li>${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10</li>`).join("")}</ul>`) + '<p class="muted">This is your own rating. Assessment evidence is recorded separately.</p>' : '<p class="muted">Optional: how would you rate your current skill?</p><form id="claim-form"><label>Rating from 1 to 10<input type="number" name="proficiency" min="1" max="10" step="1" placeholder="1–10" required></label><button class="button secondary" type="submit">Save my rating</button></form><p class="section-note">This is a self-report, not a verified score.</p>'}</section></div>
+@@ -514,6 +518,9 @@ async function loadWorkspace() {
+     ) || state.assessmentCatalog[0];
+   state.selectedSkill = state.metadata.skill_key;
+   state.history = history.attempts;
++  await loadResume();
++  await loadEvidence();
++  await loadJobs({ q: "", location: "", board: "", page: 1 });
+ }
+ 
+ async function openAttempt(id) {
+@@ -616,6 +623,13 @@ root.addEventListener("submit", (event) => {
+       await loadWorkspace();
+       renderShell();
+       focusContent();
++    } else if (form.id === "resume-form") {
++      await saveResume(values);
++    } else if (form.id === "profile-skill-form") {
++      const data = await request("/api/skills", { method: "POST", body: { skill_name: values.get("skill_name").trim(), proficiency: Number(values.get("proficiency")) } });
++      state.skills.push(data.skill);
++      renderShell();
++      showNotice("Self-reported skill saved.", true);
+     } else if (form.id === "job-filter-form") {
+       await submitJobFilters(values);
+     } else if (form.id === "job-compare-form") {
+@@ -643,11 +657,23 @@ root.addEventListener("submit", (event) => {
+ });
+ 
+ root.addEventListener("input", (event) => {
++  if (event.target.closest("#resume-form") && ["text", "source_name"].includes(event.target.name)) {
++    state.resumeDraft[event.target.name] = event.target.value;
++    state.resumeDirty = true;
++    const badge = document.querySelector("#resume-status");
++    badge.textContent = "Unsaved changes"; badge.className = "badge amber";
++  }
+   if (event.target.closest("#evidence-form")) state.evidenceDirty = true;
+   if (event.target.closest("#match-form")) state.matchDirty = true;
+ });
+ 
+ root.addEventListener("change", (event) => {
++  if (event.target.id === "resume-file") {
++    const file = event.target.files[0];
++    if (state.resumeDirty && !window.confirm("Replace the current draft text with this file?")) { event.target.value = ""; return; }
++    void withBusy(event.target, () => uploadResume(file));
++    return;
++  }
+   if (state.view !== "quiz" || event.target.name !== "answer") return;
+   answersFor(state.attempt)[state.attempt.questions[state.index].id] =
+     event.target.value;
+@@ -662,6 +688,7 @@ root.addEventListener("click", (event) => {
+     state.evidenceDirty &&
+     [
+       "overview",
++      "resume",
+       "history",
+       "evidence",
+       "cancel-evidence",
+@@ -675,6 +702,7 @@ root.addEventListener("click", (event) => {
+     state.matchDirty &&
+     [
+       "overview",
++      "resume",
+       "history",
+       "evidence",
+       "matches",
+@@ -694,7 +722,7 @@ root.addEventListener("click", (event) => {
+   }
+   if (action === "logout") {
+     if (
+-      (hasUnsavedAnswers() || state.evidenceDirty || state.matchDirty) &&
++      (hasUnsavedAnswers() || state.evidenceDirty || state.matchDirty || state.resumeDirty) &&
+       !window.confirm(
+         "Signing out will clear your unsaved work in this tab. Sign out?",
+       )
+@@ -716,6 +744,7 @@ root.addEventListener("click", (event) => {
+     state.showArchived = false;
+     clearMatchState();
+     clearJobsState();
++    state.resumeData = null; state.resumeDraft = null; state.resumeDirty = false; state.resumeFileStatus = "";
+     state.drafts.clear();
+     state.view = "overview";
+     state.authMode = "login";
+@@ -753,7 +782,25 @@ root.addEventListener("click", (event) => {
+     return;
+   }
+   void withBusy(button, async () => {
+-    if (action === "return-to-comparison") {
++    if (["resume", "reload-resume", "remove-resume"].includes(action)) {
++      if (action === "remove-resume") {
++        if (!window.confirm("Remove the saved resume from your profile? Earlier comparisons retain their own resume snapshots.")) return;
++        state.resumeData = await request("/api/resume", { method: "DELETE", body: { version: state.resumeData.version } });
++        resetResumeDraft();
++      } else if (action === "reload-resume") {
++        if (state.resumeDirty && !window.confirm("Discard the draft and use the currently saved resume?")) return;
++        await loadResume(); resetResumeDraft();
++      } else {
++        await loadResume();
++        if (!state.resumeDirty) resetResumeDraft();
++      }
++      state.evidenceEditor = null; state.evidenceDirty = false; clearMatchDraft();
++      state.view = "resume"; renderShell(); focusContent();
++    } else if (action === "remove-skill") {
++      await request(`/api/skills/${button.dataset.id}`, { method: "DELETE" });
++      state.skills = state.skills.filter((s) => String(s.id) !== button.dataset.id);
++      renderShell(); showNotice("Skill rating removed. Earlier snapshots are retained.", true);
++    } else if (action === "return-to-comparison") {
+       state.comparison = state.assessmentReturn;
+       clearMatchDraft();
+       state.view = "matches";
+@@ -901,7 +948,7 @@ function hasUnsavedAnswers() {
+ }
+ 
+ window.addEventListener("beforeunload", (event) => {
+-  if (!hasUnsavedAnswers() && !state.evidenceDirty && !state.matchDirty) return;
++  if (!hasUnsavedAnswers() && !state.evidenceDirty && !state.matchDirty && !state.resumeDirty) return;
+   event.preventDefault();
+   event.returnValue = "";
+ });
+diff --git a/backend/templates/workspace.html b/backend/templates/workspace.html
+index 35da9fa..0140017 100644
+--- a/backend/templates/workspace.html
++++ b/backend/templates/workspace.html
+@@ -7,6 +7,8 @@
+   <title>AI Career Navigator | Candidate workspace</title>
+   <link rel="icon" href="data:,">
+   <link rel="stylesheet" href="{{ url_for('static', filename='workspace.css') }}">
++  <link rel="stylesheet" href="{{ url_for('static', filename='career.css') }}">
++  <script src="{{ url_for('static', filename='resume.js') }}" defer></script>
+   <script src="{{ url_for('static', filename='jobs.js') }}" defer></script>
+   <script src="{{ url_for('static', filename='matching.js') }}" defer></script>
+   <script src="{{ url_for('static', filename='workspace.js') }}" defer></script>
+diff --git a/backend/tests/test_resume_alignment.py b/backend/tests/test_resume_alignment.py
+new file mode 100644
+index 0000000..f459dda
+--- /dev/null
++++ b/backend/tests/test_resume_alignment.py
+@@ -0,0 +1,157 @@
++"""Resume imports, owner isolation, conflict handling and frozen source coverage."""
++import io
++import os
++from pathlib import Path
++import sys
++import unittest
++from unittest.mock import patch
++from uuid import uuid4
++import zipfile
++
++os.environ["DATABASE_URL"] = "sqlite://"
++os.environ["JWT_SECRET_KEY"] = "assessment-tests-only-not-a-deployment-secret-2026"
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from app import create_app
++from extensions import db
++from services.resume_evidence import analyze_resume
++from services.resume_parser import MAX_FILE
++
++TEXT = "Candidate example\nBuilt Python services and SQL reports for a class project.\nUsed Git for version control."
++
++
++class ResumeTests(unittest.TestCase):
++    def setUp(self):
++        self.app = create_app()
++        self.app.config["TESTING"] = True
++        self.client = self.app.test_client()
++        self.owner = self.register("resume-one@example.test")
++        self.other = self.register("resume-two@example.test")
++
++    def tearDown(self):
++        with self.app.app_context():
++            db.session.remove()
++            db.engine.dispose()
++
++    def register(self, email):
++        body = {"name": "Resume test", "email": email, "password": "local-test-only-password"}
++        self.client.post("/api/register", json=body)
++        token = self.client.post("/api/login", json=body).get_json()["access_token"]
++        return {"Authorization": "Bearer " + token}
++
++    def save(self, text=TEXT, version=0, headers=None):
++        return self.client.put("/api/resume", headers=headers or self.owner,
++                               json={"text": text, "source_name": "resume.txt", "version": version})
++
++    def upload(self, content, filename):
++        return self.client.post("/api/resume/extract", headers=self.owner,
++                                data={"file": (io.BytesIO(content), filename)})
++
++    def compare(self):
++        response = self.client.post("/api/job-matches", headers=self.owner, json={
++            "submission_id": str(uuid4()), "title": "Synthetic test role",
++            "description": "Requirements:\nPython, SQL, Docker and Git are required.",
++            "source_url": "", "mode": "keyword"})
++        self.assertEqual(response.status_code, 201, response.get_json())
++        return response.get_json()["comparison"]
++
++    def test_private_routes_require_auth_and_payload_is_owner_scoped(self):
++        for method, url in [("GET", "/api/resume"), ("PUT", "/api/resume"), ("DELETE", "/api/resume"), ("POST", "/api/resume/extract")]:
++            self.assertEqual(self.client.open(url, method=method).status_code, 401)
++        self.assertEqual(self.save().status_code, 200)
++        other = self.client.get("/api/resume", headers=self.other)
++        self.assertIsNone(other.get_json()["resume"])
++        self.assertEqual(other.headers["Cache-Control"], "no-store")
++
++    def test_save_conflict_and_tombstone_do_not_overwrite_newer_text(self):
++        first = self.save().get_json()
++        self.assertEqual(first["version"], 1)
++        self.assertEqual(self.save(TEXT + "\nNew wording.", 0).status_code, 409)
++        self.assertEqual(self.save(TEXT + "\nNew wording.", 1).get_json()["version"], 2)
++        cleared = self.client.delete("/api/resume", headers=self.owner, json={"version": 2}).get_json()
++        self.assertIsNone(cleared["resume"])
++        self.assertEqual(cleared["version"], 3)
++        self.assertEqual(self.save(version=0).status_code, 409)
++        self.assertEqual(self.save(version=3).get_json()["version"], 4)
++
++    def test_validation_rejects_injected_fields_and_bad_types(self):
++        for body in ({"text": TEXT, "source_name": "resume", "version": True},
++                     {"text": "short", "source_name": "resume", "version": 0},
++                     {"text": "x" * 30001, "source_name": "resume", "version": 0},
++                     {"text": TEXT, "source_name": "resume", "version": 0, "user_id": 2}):
++            self.assertEqual(self.client.put("/api/resume", headers=self.owner, json=body).status_code, 400)
++
++    def test_extraction_is_preview_only_and_file_status_is_explicit(self):
++        response = self.upload(TEXT.encode(), "resume.txt")
++        self.assertEqual(response.status_code, 200, response.get_json())
++        self.assertEqual(response.get_json()["text"], TEXT)
++        self.assertFalse(response.get_json()["saved"])
++        self.assertIsNone(self.client.get("/api/resume", headers=self.owner).get_json()["resume"])
++
++    def test_docx_extraction_reads_paragraphs_and_rejects_entities(self):
++        stream = io.BytesIO()
++        with zipfile.ZipFile(stream, "w") as archive:
++            archive.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>' + TEXT + '</w:t></w:r></w:p></w:body></w:document>')
++        response = self.upload(stream.getvalue(), "resume.docx")
++        self.assertEqual(response.status_code, 200, response.get_json())
++        self.assertIn("Python services", response.get_json()["text"])
++        stream = io.BytesIO()
++        with zipfile.ZipFile(stream, "w") as archive:
++            archive.writestr("word/document.xml", '<!DOCTYPE x [<!ENTITY a "unsafe">]><x>&a;</x>')
++        self.assertEqual(self.upload(stream.getvalue(), "resume.docx").status_code, 400)
++
++    def test_pdf_text_and_blank_scan_fallback(self):
++        from pypdf import PdfWriter
++        from pypdf.generic import NameObject, DictionaryObject, DecodedStreamObject
++        writer = PdfWriter(); page = writer.add_blank_page(width=612, height=792)
++        font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"), NameObject("/BaseFont"): NameObject("/Helvetica")})
++        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})})
++        content = DecodedStreamObject(); content.set_data(b"BT /F1 12 Tf 40 700 Td (Built Python services and SQL reports with Git for a class project.) Tj ET")
++        page[NameObject("/Contents")] = content
++        stream = io.BytesIO(); writer.write(stream)
++        response = self.upload(stream.getvalue(), "resume.pdf")
++        self.assertEqual(response.status_code, 200, response.get_json())
++        self.assertIn("Python services", response.get_json()["text"])
++        writer = PdfWriter(); writer.add_blank_page(width=612, height=792)
++        stream = io.BytesIO(); writer.write(stream)
++        self.assertIn("readable text", self.upload(stream.getvalue(), "scan.pdf").get_json()["message"])
++
++    def test_bad_upload_keeps_previous_resume_and_parser_timeouts_are_handled(self):
++        import subprocess
++        self.save()
++        for data, name in [(b"x" * (MAX_FILE + 1), "large.txt"), (b"invalid", "resume.pdf"), (TEXT.encode(), "resume.html")]:
++            self.assertEqual(self.upload(data, name).status_code, 400)
++        with patch("routes.resume.subprocess.run", side_effect=subprocess.TimeoutExpired("parser", 10)):
++            self.assertEqual(self.upload(TEXT.encode(), "resume.pdf").status_code, 400)
++        self.assertEqual(self.client.get("/api/resume", headers=self.owner).get_json()["resume"]["text"], TEXT)
++
++    def test_resume_mentions_respect_boundaries_and_uncertain_wording(self):
++        result = analyze_resume("Built JavaScript services with NoSQL and MySQL.\nLearning Docker.\nNo experience with Java.\nBuilt Python services.")
++        self.assertEqual({r["skill_key"] for r in result["skills"]}, {"javascript", "python"})
++        self.assertEqual(len(result["manual_review"]), 2)
++
++    def test_resume_does_not_create_ratings_and_old_comparison_survives_removal(self):
++        self.save()
++        saved = self.compare()
++        self.assertEqual(saved["result"]["alignment"]["with_resume_mentions"], 3)
++        self.assertEqual(saved["result"]["alignment"]["with_self_ratings"], 0)
++        self.assertEqual(saved["result"]["alignment"]["without_recorded_support"], ["Docker"])
++        self.assertEqual(self.client.get("/api/skills", headers=self.owner).get_json()["skills"], [])
++        self.client.delete("/api/resume", headers=self.owner, json={"version": 1})
++        fresh = self.compare()
++        self.assertIsNone(fresh["candidate_snapshot"]["resume"])
++        self.assertEqual(fresh["result"]["alignment"]["with_resume_mentions"], 0)
++        old = self.client.get(f"/api/job-matches/{saved['id']}", headers=self.owner).get_json()["comparison"]
++        self.assertEqual(old, saved)
++        self.assertEqual(self.client.get(f"/api/job-matches/{saved['id']}", headers=self.other).status_code, 404)
++
++    def test_skill_removal_is_owner_scoped_and_preserves_snapshot(self):
++        skill = self.client.post("/api/skills", headers=self.owner, json={"skill_name": "Python", "proficiency": 7}).get_json()["skill"]
++        saved = self.compare()
++        self.assertEqual(self.client.delete(f"/api/skills/{skill['id']}", headers=self.other).status_code, 404)
++        self.assertEqual(self.client.delete(f"/api/skills/{skill['id']}", headers=self.owner).status_code, 200)
++        old = self.client.get(f"/api/job-matches/{saved['id']}", headers=self.owner).get_json()["comparison"]
++        self.assertEqual(old, saved)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/docs/EXPERT_REVIEW_PLAN.md b/docs/EXPERT_REVIEW_PLAN.md
+index cc39701..fa2c6e4 100644
+--- a/docs/EXPERT_REVIEW_PLAN.md
++++ b/docs/EXPERT_REVIEW_PLAN.md
+@@ -1,6 +1,6 @@
+-# Expert review plan — Saturday 3 October 2026
++# Final submission plan — Thursday 8 October 2026
+ 
+-Plan updated 30 September 2026. Target: a coherent, reproducible research prototype
++Plan updated 5 October 2026 after the submission date changed. Target: a coherent, reproducible research prototype
+ and an honest preliminary evaluation. Keep extending the existing repository and
+ credit the original team contribution. Do not restart the project.
+ 
+@@ -21,9 +21,11 @@ assessment, provenance and uncertainty needs comparison with existing career and
+ learning systems before asserting a gap. A collection of useful features alone
+ is not proof of a new research contribution.
+ 
+-## What works after the multi-skill batch
++## What works after the resume/UI batch
+ 
+ - Local authenticated candidate workspace and database records.
++- Resume extraction preview, reviewed saved text, versioned resume/job alignment
++  and responsive navigation across the complete candidate workflow.
+ - SQL, Python and REST/HTTP foundation diagnostics with immutable results.
+ - Curated topic-linked resources, original practice tasks and activity tracking.
+ - Self-reported skills, project and certificate records, labelled unverified.
+@@ -102,10 +104,10 @@ and present the result as independent validation or a new foundation model.
+ 
+ | Date | Deliverable |
+ | --- | --- |
+-| Wed 30 Sep | Install research batch; settle roles, content/source review and freeze study inputs before independent annotation/pilot; begin report methods |
+-| Thu 1 Oct | Finish feasible pilot runs, analyse errors and document limitations; preserve incomplete results honestly |
+-| Fri 2 Oct | Feature freeze; finish report/paper draft/slides; rehearse demo and record backup |
+-| Sat 3 Oct | Show the system, available evidence and precisely scoped research question; obtain expert feedback |
++| Mon 5 Oct | Apply resume/UI update, run the complete local flow and commit it; review report/paper drafts and settle author attribution |
++| Tue 6 Oct | Complete feasible human content/source checks and independent pilot work only after freezing inputs; record actual counts and exclusions |
++| Wed 7 Oct | Freeze code; insert only measured results, prepare slides, rehearse the cached-data demo and record a backup |
++| Thu 8 Oct | Submit the verified application and documents with completed/pending work stated accurately |
+ 
+ If independent data collection cannot finish, present the evaluation protocol and
+ clearly marked preliminary diagnostics. Do not invent results to fill the paper.
+diff --git a/docs/LIVE_JOBS.md b/docs/LIVE_JOBS.md
+index bd50a53..f6f0769 100644
+--- a/docs/LIVE_JOBS.md
++++ b/docs/LIVE_JOBS.md
+@@ -18,7 +18,7 @@ tables do not require a schema alteration.
+ 
+ Open http://127.0.0.1:5000/app and press Ctrl+F5 to load the updated scripts.
+ 
+-1. Sign in and open **Live jobs**.
++1. Sign in, save a reviewed resume under **Resume & skills**, and open **Live opportunities**.
+ 2. Click **Refresh Canonical**, then **Refresh Razorpay**. Each refresh requests
+    that employer's current public board and stores the successfully parsed list.
+ 3. Search for `Python` and optionally filter the location with `APAC` or
+@@ -31,15 +31,18 @@ Open http://127.0.0.1:5000/app and press Ctrl+F5 to load the updated scripts.
+    The server saves the full extracted posting text, provenance and current
+    candidate records, then displays the existing evidence-aware comparison.
+ 6. Expand **Source and comparison method** to inspect source details. Saved
+-   comparisons remain available under **Compare a job**, including after a job
++   comparisons remain available under **Job alignment**, including after a job
+    changes or disappears from a board.
+ 7. **Try keyword baseline** reopens the current cached posting with keyword mode
+    selected. Review and save it. This action uses the current candidate profile
+    and posting version; it is not a controlled evaluation on frozen identical
+    inputs. Use the future evaluation harness for that experiment.
+ 
+-Semantic matching still covers ten curated backend skill concepts. SQL is the
+-only available diagnostic. Project/certificate entries remain unverified claims.
++Semantic matching covers ten curated backend skill concepts. SQL, Python and
++REST/HTTP diagnostics are available. Resume mentions and project/certificate
++entries remain unverified claims. The alignment table shows these sources
++alongside self-ratings and diagnostic answer counts. A missing resume mention is
++not proof of missing proficiency; no years/location/qualification fit is inferred.
+ There is no overall suitability ranking, proficiency score, or hiring probability.
+ Listings are alphabetical; keyword/location filters do not establish eligibility.
+ 
+diff --git a/docs/PROJECT_STATUS.md b/docs/PROJECT_STATUS.md
+index fe63ce6..ee5b8b9 100644
+--- a/docs/PROJECT_STATUS.md
++++ b/docs/PROJECT_STATUS.md
+@@ -1,12 +1,13 @@
+ # AI Career Navigator — implementation and research status
+ 
+-Updated 30 September 2026. This file distinguishes working functionality from
++Updated 5 October 2026. Final submission is Thursday 8 October. This file distinguishes working functionality from
+ planned research claims. See [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for the broader
+ product vision; not every part of that vision is implemented.
+ 
+ | Area | Current implementation | Remaining work / limits |
+ | --- | --- | --- |
+ | Local application | Flask, PostgreSQL, authentication and browser workspace | Deployment hardening and a hosted demo remain separate work |
++| Resume and interface | PDF/DOCX/TXT extraction preview, editable saved text, version checks, responsive navigation and evidence alignment table | Review extracted text; scanned PDFs need pasted/OCR text; ten-concept literal resume mentions are unverified claims |
+ | Skill assessments | SQL, Python and REST/HTTP six-question diagnostics, immutable attempts, accuracy/coverage and topic feedback | Draft content; independent review and proficiency validation pending; HTTP questions do not assess full REST design |
+ | Learning roadmap | Curated SQL/Python/HTTP resources and original tasks linked to topic evidence; job cards lead to assessments and new comparisons | Progress is self-reported; tasks are ungraded and learning effectiveness is unvalidated |
+ | Candidate evidence | Projects/certificates with skill tags, edits, version checks and archive/restore | Records remain unverified; no automatic credential verification |
+@@ -16,6 +17,16 @@ product vision; not every part of that vision is implemented.
+ | Research contribution | Evidence distinctions and source snapshots implemented; focused eight-work literature matrix and two-part pilot protocol drafted | Close prior-work overlap exists; novelty and recommendation benefit remain unproven; human source/content review and data collection pending |
+ | Training | Pretrained model used for inference | No project-specific supervised training or fine-tuning completed |
+ 
++The resume/UI batch extends `c9d104a`. Comparisons now preserve the saved resume
++with ratings, project/certificate records and latest submitted diagnostics. Source
++coverage counts include explicitly named job concepts, including preferred ones;
++they overlap and are not a job-fit percentage. Semantic job suggestions remain
++visible separately. See [RESUME_ALIGNMENT.md](RESUME_ALIGNMENT.md).
++
++On 5 October, all 140 backend tests passed in an isolated Python 3.12 / SQLite
++environment, including actual pinned-model inference. This is technical
++verification, not independent research validation or a PostgreSQL deployment test.
++
+ The next research task is documented in
+ [RESEARCH_EVALUATION.md](RESEARCH_EVALUATION.md). It measures job-skill extraction
+ first. A separate study is needed to test whether assessment/evidence context
+@@ -52,6 +63,7 @@ It contains blank forms and a proposed protocol, not new study results.
+ 
+ ## Relevant implementation notes
+ 
++- [RESUME_ALIGNMENT.md](RESUME_ALIGNMENT.md)
+ - [MULTISKILL_ASSESSMENTS.md](MULTISKILL_ASSESSMENTS.md)
+ - [SQL_ASSESSMENT.md](SQL_ASSESSMENT.md)
+ - [ASSESSMENT_UI.md](ASSESSMENT_UI.md)
+diff --git a/docs/RESUME_ALIGNMENT.md b/docs/RESUME_ALIGNMENT.md
+new file mode 100644
+index 0000000..f917078
+--- /dev/null
++++ b/docs/RESUME_ALIGNMENT.md
+@@ -0,0 +1,119 @@
++# Resume, job alignment and interface — 5 October 2026
++
++This batch extends `c9d104a` without replacing the existing application. It adds
++resume review/save and a shared responsive interface to the live-job, diagnostic
++and roadmap workflow. Final submission is Thursday 8 October 2026.
++
++## Install on the existing Windows project
++
++Stop the running Flask process with Ctrl+C, then use the existing interpreter:
++
++```powershell
++.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
++.\.venv\Scripts\python.exe -m unittest discover -s backend/tests -v
++.\.venv\Scripts\python.exe .\backend\app.py
++```
++
++The new dependency is `pypdf==6.19.0`. Keep existing semantic dependencies, model
++weights and private `backend/.env`. Starting the app creates `candidate_resumes`;
++existing tables do not require an alteration. Open http://127.0.0.1:5000/app and
++press Ctrl+F5. ONNX Runtime telemetry is disabled before runtime initialization
++and through its documented API. The model setup download still needs the network;
++subsequent inference uses local model files.
++
++## Complete demonstration
++
++1. Sign in and open **Resume & skills**. Upload a PDF, DOCX or TXT, or paste text.
++   Read and correct the extracted draft; click **Save resume**. The persistent
++   filename/status and saved version confirm success even if the native file
++   picker resets to “No file chosen.” Extraction alone does not save a resume.
++2. Add honest self-ratings. Add projects/certificates under the separate evidence
++   tab and tag relevant skills. These records are explicitly unverified.
++3. Open **Live opportunities** and refresh Canonical or Razorpay. Read each
++   board's status. Search and open **View & compare** for a relevant posting;
++   check employer/location/requirements and the employer source link.
++4. Compare with keywords or keywords plus semantic suggestions. The saved
++   alignment table separates resume mentions, ratings, project/certificate tags
++   and diagnostic answers. Expand source passages and ambiguous context.
++5. Assess Python, SQL or REST/HTTP from a matching skill card. Include a skipped
++   topic and an incorrect answer in a synthetic demo attempt to show different
++   actions. Open the roadmap and a linked course/reference.
++6. Return to the original comparison and select the action to compare again with
++   updated evidence. Save the new comparison. The original remains unchanged.
++
++Use synthetic demonstration information, separate from research participants.
++If a board cannot refresh, the previous cache remains available with its true
++timestamp/status. A pasted description is also available under **Job alignment**.
++Do not relabel pasted or cached data as a fresh successful live retrieval.
++
++## What alignment means
++
++The job extractor retains its ten concepts, keyword baseline and optional
++pretrained MiniLM suggestions. The resume analyser uses only literal curated
++names/aliases with word boundaries. Lines indicating learning, aspiration or
++negative claims are held for manual review. This conservative rule can withhold
++valid mixed statements; candidates can inspect the passage. It is not semantic
++resume parsing, verification of work history or a calibrated ATS score.
++
++Four source-coverage counts use explicitly named job concepts, including
++preferred concepts. Semantic-only suggestions stay visible but are excluded
++from these counts. Counts overlap and must not be summed into a percentage.
++With no named concepts the UI shows an em dash. Missing resume mentions mean
++only that no supported mention was found. An all-skipped diagnostic is not
++counted as answered evidence. None of these counts establishes full job fit,
++eligibility, years of experience, credential validity or hiring probability.
++
++Resume text never creates skill ratings or changes diagnostic scores. The
++roadmap still uses the existing topic-answer policy. New snapshot format
++`candidate-evidence-v3` retains resume text/name/hash/version/time along with
++the existing sources; old comparisons without resumes remain readable.
++Policies are `resume-mentions-v1` and `source-coverage-v1`. Extraction settings
++and research question definitions are unchanged.
++
++## File and record behaviour
++
++- Files are limited to 2 MB; extracted/saved text to 30,000 characters; minimum
++  saved text is 40 characters. PDF extraction supports up to ten pages. Scanned
++  images and encrypted PDFs require an independently prepared text alternative.
++- DOCX reads the main document paragraphs/tables, not headers, images or text
++  in every drawing. Always inspect the editable extraction preview.
++- An isolated parser process has a ten-second timeout. ZIP/XML sizes are
++  bounded; on POSIX the worker also has CPU/address-space limits. Windows uses
++  the parent timeout without those POSIX resource limits.
++- The original uploaded bytes are not stored. The reviewed plaintext is saved
++  privately to the account and copied into that account's saved comparisons.
++  This is plaintext database storage, not encryption at rest.
++- Saving/removing requires the latest version. A conflict requires reloading
++  and reviewing the saved text; stale requests cannot silently replace it.
++- Removing the current resume clears its text but preserves a version tombstone
++  and previous comparison snapshots. This is not an account-wide erasure tool.
++- Unsaved drafts remain in the current tab only. Navigation back to the editor
++  retains them; reload/logout warns about loss. A saved resume is loaded from
++  the account. Authentication and owner isolation apply to every resume route.
++
++## API
++
++| Method/path | Input | Effect |
++| --- | --- | --- |
++| GET `/api/resume` | Authenticated account | Current saved text, version, mention analysis and catalogue |
++| POST `/api/resume/extract` | Multipart `file` | Extraction preview; no save |
++| PUT `/api/resume` | JSON `version`, `text`, `source_name` | Version-checked save |
++| DELETE `/api/resume` | JSON `version` | Clear current text; retain old snapshots |
++| DELETE `/api/skills/<id>` | Owned rating ID | Remove self-rating; old comparison snapshots remain |
++
++## Technical checks and research status
++
++On 5 October all 140 backend tests passed, including actual MiniLM inference,
++resume format/limit handling, account isolation, stale version protection,
++claim boundaries and snapshot preservation. The environment used Python 3.12
++and SQLite; the user's Windows/PostgreSQL run is a separate local smoke check.
++These tests verify software behaviour, not research accuracy or proficiency.
++
++Independent content review, reference labels, practical-task outcomes and
++recommendation utility remain pending. See `research/PILOT_PROTOCOL.md`. Keep
++resume context constant across research conditions; the proposed pilot does
++not isolate the benefit of the new resume parser or visual design.
++
++Preserve private resumes and study records outside public Git commits. Use the
++existing ignored `data/research/` folder for local study materials. Keep original
++team attribution and commit this batch as a distinct portfolio contribution.
+diff --git a/docs/research/PILOT_PROTOCOL.md b/docs/research/PILOT_PROTOCOL.md
+index 1179512..09225b0 100644
+--- a/docs/research/PILOT_PROTOCOL.md
++++ b/docs/research/PILOT_PROTOCOL.md
+@@ -1,6 +1,12 @@
+ # Pilot protocol — extraction and learning-action evaluation
+ 
+ Version: **career-pilot-protocol-v1**. Written 29 September 2026.
++Administrative amendment, 5 October 2026: submission moved to 8 October; the
++proposed schedule below is updated. Outcomes have not been supplied. Study rules
++are unchanged. Record any actual prior collection/exposure rather than treating
++this amendment as a fresh preregistration. The resume/UI batch changes displayed
++candidate context: hold that context constant across RQ2 conditions; it does not
++test the benefit of resume extraction. Freeze the actual updated commit used.
+ Status: **proposed; no new observations collected by this document**.
+ Code baseline inspected: `272efb0`. Freeze the actual code commit and protocol
+ before collecting outcomes; use [study_register.template.json](../../research/protocol/study_register.template.json).
+@@ -19,7 +25,7 @@ Suggested feasibility targets, not statistically justified sample sizes:
+ - RQ2: six adult volunteers, preferably two per supported skill, one target skill
+   and its three topics per person. Two qualified raters review the task evidence.
+   More participants may be added only under a revised plan fixed before outcomes.
+-- Complete the feasible observations by 1 October; prepare the review on 2 October.
++- Complete feasible observations by 6 October; prepare submission on 7 October.
+   If fewer cases are available, report the actual count and missing work. Do not
+   call this sample representative of students, employers or the labour market.
+ 
+@@ -283,7 +289,7 @@ bias, assistance/guessing, clustered employers, limited language/role coverage,
+ fixed questions and missing responses that are not random. Snapshot traceability
+ improves auditability but does not remove these threats.
+ 
+-## 6. What can be presented on 3 October
++## 6. What can be submitted on 8 October
+ 
+ | Evidence available | Defensible presentation |
+ | --- | --- |
+diff --git a/docs/research/START_HERE.md b/docs/research/START_HERE.md
+index e240c1a..ba25100 100644
+--- a/docs/research/START_HERE.md
++++ b/docs/research/START_HERE.md
+@@ -1,7 +1,8 @@
+ # Research batch: what to do now
+ 
+-Prepared 29 September 2026; delivery checklist updated 30 September 2026,
+-against application commit `272efb0`.
++Prepared 29 September 2026; delivery checklist updated 5 October 2026.
++Original research baseline: `272efb0`; research documents: `c9d104a`.
++The resume/UI update extends that baseline; record its actual commit for any study.
+ This batch adds research documents and blank forms. It does not change the running
+ application, collect participant data or produce research results.
+ 
+@@ -21,7 +22,7 @@ job-linked learning guidance. Novelty and improved effectiveness remain unproven
+ | [references.bib](references.bib) | Eight bibliography records, with metadata discrepancies flagged |
+ | [study_register.template.json](../../research/protocol/study_register.template.json) | Record the actual freeze, people, exposure, versions and deviations privately |
+ 
+-## Three actions today — 30 September
++## Three actions today — 5 October
+ 
+ 1. **Prajwal:** commit this batch and read the positioning document. Record the
+    actual study choices and code version in a private copy of the register.
+@@ -33,7 +34,7 @@ job-linked learning guidance. Novelty and improved effectiveness remain unproven
+ 
+ These are proposed roles, not assignments already accepted by team members.
+ No invitations or messages have been sent. If reviewers or participants are not
+-available, prepare the protocol and demonstration for Saturday and state that
++available, prepare the protocol and demonstration for Thursday 8 October and state that
+ independent validation is pending. AI-generated reviews cannot replace it.
+ 
+ ## Where filled records go
+@@ -55,18 +56,16 @@ The Markdown forms and study-register JSON are **not app uploads** and are **not
+ saved-review files for the annotation page**. They are documentation/recordkeeping.
+ Use only the existing exporter and review-page formats in that page.
+ 
+-## Sequence to Saturday 3 October
++## Sequence to Thursday 8 October
+ 
+-- **30 September:** install this batch; settle scope and roles, complete feasible
+-  content/source checks, freeze actual study inputs and begin independent work
+-  only after the required reviews. Draft the report methods in parallel.
+-- **1 October:** finish feasible collection and descriptive analysis; record what
+-  remains incomplete. Keep negative/tied outcomes and exclusions.
+-- **2 October:** finish the report/paper draft/slides and rehearse a stable demo.
+-  Methods can be drafted earlier while data collection proceeds; results remain
+-  explicitly pending until measured.
+-- **3 October:** present working functionality, available evidence and limits.
++- **5 October:** apply the resume/UI batch and verify the full local flow. Review
++  the report and paper drafts; settle authorship and available human reviewers.
++- **6 October:** finish feasible source/content checks and independent collection
++  after freezing the study record. Analyse only observations actually obtained.
++- **7 October:** freeze code, update results/status, prepare slides, rehearse the
++  complete demo and record a backup. Keep a successfully refreshed job cache.
++- **8 October:** submit the application, report, paper draft and required materials.
+ 
+-The next writing batch can turn these materials into the formal report and paper
+-draft without waiting for results. It must retain “pending” wherever observations
+-have not been collected.
++The report and paper can describe the implemented system now. Leave independent
++results explicitly pending until collected. Resume mentions are new display
++context, not a tested proficiency measure or a new outcome in the pilot.

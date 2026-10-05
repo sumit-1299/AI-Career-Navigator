@@ -1,0 +1,452 @@
+diff --git a/backend/scripts/research_evaluation.py b/backend/scripts/research_evaluation.py
+index 3c2726f..a54ad47 100644
+--- a/backend/scripts/research_evaluation.py
++++ b/backend/scripts/research_evaluation.py
+@@ -1,4 +1,4 @@
+-"""CLI: freeze cached jobs, reconcile blind reviews, and compare shipped matchers."""
++"""CLI: freeze jobs, diagnose AI drafts, and evaluate independently reviewed labels."""
+ import argparse
+ from pathlib import Path
+ import sys
+@@ -8,6 +8,7 @@ from services.research_evaluation import (ROOT, KEYS, digest, load_json, make_li
+     markdown_report, now_iso, reconcile, run_evaluation, seal_dataset, text_digest,
+     validate_dataset, write_new_json)
+ from services.semantic_encoder import SemanticUnavailable
++from services.research_diagnostic import diagnostic_markdown, run_diagnostic
+ 
+ 
+ def export_cache(args):
+@@ -87,6 +88,21 @@ def evaluate(args):
+     save_run(args.out, report)
+ 
+ 
++def diagnose(args):
++    directory = Path(args.out)
++    if directory.exists():
++        raise ValueError('Output directory already exists. Choose a new diagnostic directory to preserve the earlier result.')
++    report = run_diagnostic(load_json(args.dataset), load_json(args.draft))
++    # Inference and validation finish before any output directory is created.
++    directory.mkdir(parents=True, exist_ok=False)
++    write_new_json(directory / 'results.json', report)
++    (directory / 'report.md').write_text(diagnostic_markdown(report), encoding='utf-8')
++    print('PRELIMINARY AI-ASSISTED DIAGNOSTIC: not independently human-validated research results.')
++    print(f"Compared {report['case_count']} development jobs; {report['test_cases_not_scored']} test jobs were not scored.")
++    print(f"Report: {directory / 'report.md'}")
++    print(f"Disagreement details: {directory / 'results.json'}")
++
++
+ def synthetic_packet():
+     fixture = load_json(ROOT / 'research' / 'synthetic_smoke.json')
+     cases, gold = [], {}
+@@ -121,6 +137,11 @@ def main():
+     smoke_parser = commands.add_parser('smoke', help='Run labelled synthetic checks; never research evidence')
+     smoke_parser.add_argument('--out', default='data/research/smoke-v1')
+     smoke_parser.set_defaults(run=smoke)
++    diagnostic = commands.add_parser('diagnose', help='Compare development predictions with an AI draft; not human-validated research results')
++    diagnostic.add_argument('--dataset', required=True)
++    diagnostic.add_argument('--draft', required=True)
++    diagnostic.add_argument('--out', required=True)
++    diagnostic.set_defaults(run=diagnose)
+     for name, function in [('prepare-adjudication', create_adjudication), ('evaluate', evaluate)]:
+         sub = commands.add_parser(name)
+         sub.add_argument('--dataset', required=True)
+diff --git a/backend/services/research_diagnostic.py b/backend/services/research_diagnostic.py
+new file mode 100644
+index 0000000..cbec2c9
+--- /dev/null
++++ b/backend/services/research_diagnostic.py
+@@ -0,0 +1,121 @@
++"""Development-only comparison against declared AI draft labels, not human truth."""
++from collections import Counter
++from hashlib import sha256
++
++from services.research_evaluation import (KEYS, LABELS, METHODS, REVIEW_SCHEMA, ROOT,
++    digest, is_ai_assisted_review, run_evaluation, validate_dataset)
++
++REFERENCE_STATUS = 'ai_assisted_draft_unvalidated'
++
++
++def validate_ai_draft(dataset, draft):
++    if not isinstance(draft, dict) or draft.get('schema_version') != REVIEW_SCHEMA:
++        raise ValueError('Choose the AI-assisted saved review JSON, not the original dataset or a report.')
++    if draft.get('dataset_id') != dataset['dataset_id'] or draft.get('dataset_fingerprint') != dataset['fingerprint']:
++        raise ValueError('AI draft belongs to a different dataset or dataset version.')
++    if not is_ai_assisted_review(draft):
++        raise ValueError('This diagnostic requires explicitly declared AI-assisted provenance.')
++    if draft.get('kind') != 'independent' or draft.get('complete') is not False or draft.get('without_model_predictions') is not False:
++        raise ValueError('Use the saved AI draft with complete=false and without_model_predictions=false; leave the human-review declaration unchecked.')
++    required = {case['id'] for case in dataset['cases']}
++    rows = draft.get('annotations')
++    if not isinstance(rows, list):
++        raise ValueError('AI draft annotations are missing.')
++    references = {}
++    for row in rows:
++        if not isinstance(row, dict) or not isinstance(row.get('case_id'), str) or row['case_id'] not in required or row['case_id'] in references:
++            raise ValueError('AI draft contains an unknown or duplicate case.')
++        labels = row.get('labels')
++        if not isinstance(labels, dict) or set(labels) != set(KEYS) or any(not isinstance(value, str) or value not in LABELS for value in labels.values()):
++            raise ValueError('The AI draft must label all ten concepts present, absent or uncertain for every case.')
++        notes = row.get('notes')
++        if not isinstance(notes, str) or len(notes) > 5000:
++            raise ValueError('AI draft notes must be text under 5,000 characters.')
++        if any(value in {'present', 'uncertain'} for value in labels.values()) and not notes.strip():
++            raise ValueError('Keep supporting notes for present and uncertain AI draft labels.')
++        references[row['case_id']] = dict(labels)
++    if set(references) != required:
++        raise ValueError('The AI draft is missing cases from the original packet.')
++    return references
++
++
++def run_diagnostic(dataset, draft, runner=None):
++    validate_dataset(dataset)
++    if dataset['kind'] != 'live_job_pilot':
++        raise ValueError('Use smoke for synthetic checks; diagnose requires frozen live-job text.')
++    references = validate_ai_draft(dataset, draft)
++    # No split option: this path must not inspect test predictions during development.
++    report = run_evaluation(dataset, references, 'development', runner=runner,
++                            reference_status=REFERENCE_STATUS)
++    report['schema_version'] = 'career-skill-ai-diagnostic-v1'
++    report['independent_human_validation'] = False
++    report['draft_sha256'] = digest(draft)
++    report.pop('review_hashes')
++    report.pop('agreement')
++    report['reference_labels'] = report.pop('gold')
++    # A sampling interval cannot quantify error or bias in the AI labels. Keep the
++    # descriptive difference only; do not publish a bootstrap interval for this mode.
++    diff = report.pop('paired_difference')
++    report['comparison'] = {'hybrid_minus_keyword_micro_f1': diff['delta_micro_f1'],
++        'meaning': 'Difference in agreement with unvalidated AI labels; not a model-quality or significance claim.'}
++    notes = {row['case_id']: row['notes'] for row in draft['annotations']}
++    disagreements = []
++    for row in report.pop('errors'):
++        row['reference_label'] = row.pop('gold')
++        row['difference'] = 'method_only' if row.pop('error') == 'false_positive' else 'draft_only'
++        row['draft_notes'] = notes[row['case_id']]
++        disagreements.append(row)
++    report['disagreements_with_ai'] = disagreements
++    selected = [case for case in dataset['cases'] if case['split'] == 'development']
++    report['development_case_ids'] = [case['id'] for case in selected]
++    report['test_cases_not_scored'] = sum(case['split'] == 'test' for case in dataset['cases'])
++    report['development_employer_counts'] = dict(Counter(case['source'].get('employer', 'unknown') for case in selected))
++    report['draft_label_counts'] = dict(Counter(value for case in selected for value in references[case['id']].values()))
++    report['skills_without_positive_draft_labels'] = [key for key in KEYS if not any(references[case['id']][key] == 'present' for case in selected)]
++    report['interpretation'] = ('PRELIMINARY AI-ASSISTED DEVELOPMENT DIAGNOSTIC. '
++        'Scores describe agreement with an unvalidated AI draft, not accuracy against independent human reference labels. '
++        'A disagreement can be a matcher error, a draft-label error, or an ambiguous policy. '
++        'No model is trained, thresholds tuned, or test predictions generated. '
++        'This does not validate candidate proficiency, job ranking, roadmap benefit, or research novelty.')
++    path = 'backend/services/research_diagnostic.py'
++    # Use bytes so the recorded hash has the same cross-platform convention as the evaluator.
++    report['provenance']['source_file_sha256'][path] = sha256((ROOT / path).read_bytes()).hexdigest()
++    return report
++
++
++def diagnostic_markdown(report):
++    lines = ['# PRELIMINARY AI-ASSISTED DIAGNOSTIC — NOT HUMAN-VALIDATED RESULTS', '',
++        report['interpretation'], '',
++        f"Development jobs: **{report['case_count']}**. Test jobs not scored: **{report['test_cases_not_scored']}**.", '',
++        f"Development employer counts: `{report['development_employer_counts']}`. Draft labels: `{report['draft_label_counts']}`.", '',
++        '## Agreement with the AI draft', '',
++        'All precision/recall/F1 counts below use the AI draft as a provisional reference. They are not independently validated accuracy figures.', '',
++        '| Method | Precision vs draft | Recall vs draft | F1 vs draft | Method-only cells | Draft-only cells | Scored cells |',
++        '| --- | ---: | ---: | ---: | ---: | ---: | ---: |']
++    for result in report['methods'].values():
++        counts = result['micro']
++        lines.append(f"| {result['label']} | {counts['precision']:.4f} | {counts['recall']:.4f} | {counts['f1']:.4f} | {counts['fp']} | {counts['fn']} | {counts['known']} / {report['case_count'] * len(KEYS)} |")
++    lines += ['', 'Uncertain draft cells are excluded for both methods. Undefined precision/recall/F1 use zero. Counts named TP/FP/FN/TN in results.json are relative to the draft only.', '',
++        f"Hybrid-minus-keyword micro-F1 versus the draft: **{report['comparison']['hybrid_minus_keyword_micro_f1']:.4f}**. No significance or sampling-interval claim is made.", '',
++        '## Skills represented in this development sample', '',
++        '| Skill | Positive draft labels | Uncertain draft labels |', '| --- | ---: | ---: |']
++    for key in KEYS:
++        counts = report['methods']['keyword']['per_skill'][key]
++        lines.append(f"| {key} | {counts['support']} | {counts['uncertain']} |")
++    lines += ['', 'Skills with no positive draft labels cannot have their extraction sensitivity established by this sample.', '',
++        '## Disagreements to inspect', '',
++        'Method-only means the matcher selected a skill the AI draft marked absent. Draft-only means the AI draft marked present but the matcher did not select it. Neither direction proves which side is right.', '',
++        '| Case | Skill | Method | Difference |', '| --- | --- | --- | --- |']
++    for row in report['disagreements_with_ai']:
++        lines.append(f"| {row['case_id']} | {row['skill']} | {METHODS[row['method']]} | {row['difference']} |")
++    if not report['disagreements_with_ai']:
++        lines += ['| — | — | Both | No disagreement on resolved draft cells |']
++    lines += ['', 'Mapped passages, manual-review passages and draft notes for each disagreement are retained in results.json.', '',
++        '## Reproducibility and next action', '',
++        f"Dataset: `{report['dataset_id']}`. Fingerprint: `{report['dataset_fingerprint']}`.", '',
++        f"AI draft hash: `{report['draft_sha256']}`. Reference status: `{report['reference_status']}`.", '',
++        'Both methods use the same frozen text and empty candidate context. The semantic method includes the keyword baseline plus MiniLM suggestions. Model revision, settings, dependencies and source hashes are recorded in results.json.', '',
++        'Inspect disagreements against the original descriptions before changing extraction logic. Keep a record of any development change. The diagnose command neither edits the draft nor trains the model.', '',
++        'Obtain genuinely independent human reviews for the evaluate workflow. Anyone who consulted these AI suggestions must disclose that assistance; duplicating or renaming this draft does not create independent reviewers.', '',
++        'The packet is a small employer-concentrated convenience sample. If test examples or labels guide implementation, create a fresh untouched evaluation set. This diagnostic cannot establish a research gap or a validated research contribution.', '']
++    return '\n'.join(lines)
+diff --git a/backend/services/research_evaluation.py b/backend/services/research_evaluation.py
+index 7856dbc..799a42a 100644
+--- a/backend/services/research_evaluation.py
++++ b/backend/services/research_evaluation.py
+@@ -162,11 +162,23 @@ def make_live_dataset(records, size=24, seed='career-pilot-2026-09-v1'):
+         'near_duplicate_review_required': True})
+ 
+ 
++def is_ai_assisted_review(review):
++    """Detect declared AI provenance; this cannot authenticate a reviewer's identity."""
++    if not isinstance(review, dict):
++        return False
++    rows = review.get('annotations')
++    return review.get('annotation_origin') == 'ai_assisted' or (
++        isinstance(rows, list) and any(isinstance(row, dict) and
++        row.get('annotation_origin') == 'ai_assisted' for row in rows))
++
++
+ def validate_review(dataset, review, kind='independent', required_ids=None):
+     if not isinstance(review, dict) or review.get('schema_version') != REVIEW_SCHEMA:
+         raise ValueError('Choose a supported review JSON file.')
+     if review.get('dataset_id') != dataset['dataset_id'] or review.get('dataset_fingerprint') != dataset['fingerprint']:
+         raise ValueError('Review belongs to a different dataset or dataset version.')
++    if is_ai_assisted_review(review):
++        raise ValueError('AI-assisted labels are not independent human reviews. Use diagnose for an explicitly preliminary development comparison.')
+     if review.get('kind') != kind or review.get('complete') is not True or review.get('without_model_predictions') is not True:
+         raise ValueError('Use a completed review with the independent-from-model-predictions attestation.')
+     reviewer = review.get('reviewer_id')
+diff --git a/backend/tests/test_research_diagnostic.py b/backend/tests/test_research_diagnostic.py
+new file mode 100644
+index 0000000..8eebcf5
+--- /dev/null
++++ b/backend/tests/test_research_diagnostic.py
+@@ -0,0 +1,158 @@
++"""Checks for development-only AI reference handling and honest report provenance."""
++from argparse import Namespace
++from contextlib import redirect_stderr
++from copy import deepcopy
++import io
++from pathlib import Path
++import sys
++import tempfile
++import unittest
++from unittest.mock import patch
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from scripts import research_evaluation as cli
++from services.research_diagnostic import diagnostic_markdown, run_diagnostic, validate_ai_draft
++from services.research_evaluation import digest, validate_review
++from test_research_evaluation import packet, review
++
++
++def ai_draft(data):
++    result = review(data, 'AI_DRAFT', complete=False, without_model_predictions=False,
++                    annotation_origin='ai_assisted')
++    for row in result['annotations']:
++        row.update(reviewed=False, annotation_origin='ai_assisted')
++    return result
++
++
++class AIDiagnosticTests(unittest.TestCase):
++    def test_plain_and_ui_reexported_drafts_validate_but_never_as_independent_reviews(self):
++        data = packet()
++        draft = ai_draft(data)
++        for remove_top_marker in (False, True):
++            candidate = deepcopy(draft)
++            if remove_top_marker:
++                candidate.pop('annotation_origin')
++            self.assertEqual(len(validate_ai_draft(data, candidate)), 4)
++            # Setting completion/declarations must not erase explicit row provenance.
++            candidate.update(complete=True, without_model_predictions=True)
++            for row in candidate['annotations']:
++                row['reviewed'] = True
++            with self.assertRaisesRegex(ValueError, 'AI-assisted labels'):
++                validate_review(data, candidate)
++        self.assertEqual(len(validate_review(data, review(data))), 4)
++
++    def test_draft_binding_provenance_and_explicit_nonhuman_declaration(self):
++        data = packet()
++        original = ai_draft(data)
++        variants = [dict(original, dataset_id='wrong'), dict(original, dataset_fingerprint='wrong'),
++                    dict(original, complete=True), dict(original, without_model_predictions=True),
++                    dict(original, kind='adjudication'), dict(original, schema_version='unsupported')]
++        missing_origin = deepcopy(original)
++        missing_origin.pop('annotation_origin')
++        for row in missing_origin['annotations']:
++            row.pop('annotation_origin')
++        variants.append(missing_origin)
++        for bad in variants:
++            with self.subTest(fields={key:bad[key] for key in bad if key != 'annotations'}):
++                with self.assertRaises(ValueError):
++                    validate_ai_draft(data, bad)
++
++    def test_missing_duplicate_invalid_labels_and_absent_notes_fail(self):
++        data = packet()
++        mutations = [lambda x: x['annotations'].pop(),
++                     lambda x: x['annotations'].append(deepcopy(x['annotations'][0])),
++                     lambda x: x['annotations'][0]['labels'].pop('java'),
++                     lambda x: x['annotations'][0]['labels'].update(python=''),
++                     lambda x: x['annotations'][0]['labels'].update(python=[]),
++                     lambda x: x['annotations'][0].update(notes=''),
++                     lambda x: x['annotations'][0].update(notes='x' * 5001),
++                     lambda x: x['annotations'].__setitem__(0, None)]
++        for mutate in mutations:
++            bad = ai_draft(data)
++            mutate(bad)
++            with self.assertRaises(ValueError):
++                validate_ai_draft(data, bad)
++
++    def test_only_development_text_is_run_and_reference_metrics_are_hand_checked(self):
++        data = packet()
++        draft = ai_draft(data)
++        draft['annotations'][0]['labels']['sql'] = 'uncertain'
++        original_data, original_draft = deepcopy(data), deepcopy(draft)
++        calls = []
++        def runner(text, mode):
++            calls.append((text, mode))
++            skills = ['python', 'sql'] if mode == 'keyword' else ['sql', 'rest_api']
++            return {'skills': [{'skill_key': key, 'job_sources': [{'text': text}]} for key in skills],
++                    'manual_review': []}
++        result = run_diagnostic(data, draft, runner=runner)
++        self.assertEqual(len(calls), 4)
++        self.assertEqual({text for text, _ in calls}, {case['description'] for case in data['cases'][:2]})
++        self.assertEqual(result['test_cases_not_scored'], 2)
++        self.assertEqual(result['development_case_ids'], ['case-0', 'case-1'])
++        self.assertEqual(result['methods']['keyword']['micro']['known'], 19)
++        self.assertEqual(result['methods']['keyword']['micro']['f1'], 1)
++        self.assertAlmostEqual(result['methods']['semantic']['micro']['f1'], 1 / 3)
++        self.assertAlmostEqual(result['comparison']['hybrid_minus_keyword_micro_f1'], -2 / 3)
++        self.assertEqual(result['draft_sha256'], digest(draft))
++        self.assertEqual(result['schema_version'], 'career-skill-ai-diagnostic-v1')
++        self.assertFalse(result['independent_human_validation'])
++        self.assertNotIn('agreement', result)
++        self.assertNotIn('gold', result)
++        self.assertNotIn('paired_difference', result)
++        self.assertEqual({row['difference'] for row in result['disagreements_with_ai']}, {'method_only', 'draft_only'})
++        self.assertTrue(all('draft_notes' in row and 'gold' not in row for row in result['disagreements_with_ai']))
++        self.assertEqual((data, draft), (original_data, original_draft))
++        rendered = diagnostic_markdown(result)
++        self.assertIn('NOT HUMAN-VALIDATED RESULTS', rendered)
++        self.assertIn('F1 vs draft', rendered)
++        self.assertIn('cannot have their extraction sensitivity established', rendered)
++        self.assertNotIn("Cohen's kappa", rendered)
++        self.assertNotIn('bootstrap interval', rendered)
++
++    def test_tampered_packet_and_synthetic_packet_rejected_before_inference(self):
++        data = packet()
++        draft = ai_draft(data)
++        data['cases'][0]['description'] = 'Changed text'
++        with self.assertRaisesRegex(ValueError, 'fingerprint'):
++            run_diagnostic(data, draft, runner=lambda *_: self.fail('Must not run'))
++        data = packet()
++        data['kind'] = 'synthetic_smoke'
++        data['fingerprint'] = digest({key:value for key,value in data.items() if key != 'fingerprint'})
++        with self.assertRaisesRegex(ValueError, 'Use smoke'):
++            run_diagnostic(data, ai_draft(data), runner=lambda *_: self.fail('Must not run'))
++
++    def test_all_uncertain_development_and_failed_model_do_not_yield_success(self):
++        data = packet()
++        draft = ai_draft(data)
++        for row in draft['annotations'][:2]:
++            row['labels'] = dict.fromkeys(row['labels'], 'uncertain')
++        with self.assertRaisesRegex(ValueError, 'No resolved labels'):
++            run_diagnostic(data, draft, runner=lambda *_: self.fail('Must not run'))
++        def broken_model(*_):
++            raise RuntimeError('Unavailable model')
++        with self.assertRaisesRegex(ValueError, 'no partial metrics'):
++            run_diagnostic(data, ai_draft(data), runner=broken_model)
++
++    def test_cli_rejects_test_split_and_preserves_existing_or_failed_run_output(self):
++        with patch.object(sys, 'argv', ['research_evaluation.py', 'diagnose', '--dataset', 'd.json',
++                    '--draft', 'a.json', '--out', 'output', '--split', 'test']), redirect_stderr(io.StringIO()):
++            with self.assertRaises(SystemExit) as caught:
++                cli.main()
++            self.assertEqual(caught.exception.code, 2)
++        with tempfile.TemporaryDirectory() as folder:
++            output = Path(folder) / 'run'
++            args = Namespace(dataset='unused', draft='unused', out=output)
++            with patch.object(cli, 'load_json', return_value={}), patch.object(cli, 'run_diagnostic', side_effect=ValueError('Inference failed')):
++                with self.assertRaisesRegex(ValueError, 'Inference failed'):
++                    cli.diagnose(args)
++            self.assertFalse(output.exists())
++            output.mkdir()
++            marker = output / 'keep.txt'
++            marker.write_text('Earlier run')
++            with self.assertRaisesRegex(ValueError, 'already exists'):
++                cli.diagnose(args)
++            self.assertEqual(marker.read_text(), 'Earlier run')
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/docs/PROJECT_STATUS.md b/docs/PROJECT_STATUS.md
+index 7d57af2..dd462e6 100644
+--- a/docs/PROJECT_STATUS.md
++++ b/docs/PROJECT_STATUS.md
+@@ -12,7 +12,7 @@ product vision; not every part of that vision is implemented.
+ | Candidate evidence | Projects/certificates with skill tags, edits, version checks and archive/restore | Records remain unverified; no automatic credential verification |
+ | Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions for ten skill concepts | Thresholds uncalibrated; no overall hiring probability, suitability rank or proficiency score |
+ | Live jobs | Selected Canonical/Razorpay boards, cached freshness, filtering and versioned comparison snapshots | Limited employer coverage, manual refresh, no market-wide feed |
+-| Evaluation tools | Frozen job exporter, independent annotation page, adjudication and paired extraction metrics | Human reviews and actual pilot findings still pending |
++| Evaluation tools | Frozen job exporter, independent annotation page, adjudication, paired extraction metrics and a separate AI-draft development diagnostic | Human validation remains pending; agreement with an AI draft is preliminary and cannot establish accuracy |
+ | Research contribution | Candidate evidence, uncertainty and source snapshots form the proposed approach | Literature gap/novelty and added decision value are not established by working features alone |
+ | Training | Pretrained model used for inference | No project-specific supervised training or fine-tuning completed |
+ 
+@@ -20,6 +20,9 @@ The next research task is documented in
+ [RESEARCH_EVALUATION.md](RESEARCH_EVALUATION.md). It measures job-skill extraction
+ first. A separate study is needed to test whether assessment/evidence context
+ improves skill-gap decisions. Synthetic smoke-test metrics are not research results.
++The `diagnose` command can inspect development disagreements against an explicitly
++AI-assisted draft while human validation is pending. It does not score test jobs,
++train a model or satisfy the independent-review requirements of `evaluate`.
+ 
+ ## Earlier career knowledge base
+ 
+diff --git a/docs/RESEARCH_EVALUATION.md b/docs/RESEARCH_EVALUATION.md
+index 8c4192e..1b3951a 100644
+--- a/docs/RESEARCH_EVALUATION.md
++++ b/docs/RESEARCH_EVALUATION.md
+@@ -187,6 +187,53 @@ and results under `data/research/` are ignored by Git. Store them privately with
+ backup; Git is not their backup. Code, protocol and explicitly synthetic fixtures
+ under `research/` are tracked for portfolio review.
+ 
++## Optional development diagnostic using an AI-assisted draft
++
++When independent human labels are not available, an explicitly AI-assisted draft
++can support preliminary debugging. This is a separate workflow, not a replacement
++for Steps 4–5. Use the original `pilot-v1.json` and `pilot_v1_AI_DRAFT.json` supplied
++for that exact packet, or a saved draft that preserves its AI-provenance markers.
++Leave the human-review declaration unchecked. Do not rename duplicate copies as
++R1/R2 or claim that assisted review was blind independent annotation.
++
++From the project root in PowerShell:
++
++```powershell
++.\.venv\Scripts\python.exe .\backend\scripts\research_evaluation.py diagnose --dataset .\data\research\pilot-v1.json --draft .\data\research\pilot_v1_AI_DRAFT.json --out .\data\research\ai-diagnostic-v1
++```
++
++This command always uses **development cases only** (12 in the default packet).
++It has no test-split option. Both matchers receive the same frozen descriptions,
++and neither candidate records nor the live database are read. The installed local
++MiniLM model and existing semantic dependencies are required; there are no new
++packages for this command. An unavailable model fails the run without writing a
++partial success report. Existing output directories are never overwritten.
++
++The output folder contains:
++
++- `report.md`: prominently marked AI-assisted diagnostic, method agreement with
++  the draft, positive/uncertain skill support, and disagreements to inspect.
++- `results.json`: a distinct `career-skill-ai-diagnostic-v1` schema, AI reference
++  labels, draft fingerprint, predictions, source/model hashes, mapped passages
++  and draft notes. It does not contain human inter-reviewer agreement statistics.
++
++Precision/recall/F1 are relative to the **unvalidated AI draft**. A disagreement
++may reflect a matcher error, an AI-label error or an unclear annotation policy.
++These figures are not independently validated accuracy, proficiency, suitability
++or proof of novelty. No sampling interval can establish validity of the AI labels;
++this report therefore does not present one. Uncertain cells are excluded equally
++for both methods, and zero-positive skills must not be treated as validated.
++
++Inspect the disagreement passages before modifying extraction logic. Save a new
++versioned run after any development change. Nothing in `diagnose` trains or tunes
++the model or changes your packet/review files. If test cases or labels influenced
++your choices, obtain a fresh untouched test set for final evaluation.
++
++Known AI-provenance markers at the review level or in individual annotations are
++rejected by `evaluate` and `prepare-adjudication`, even if completion/declaration
++checkboxes are changed. This check preserves declared provenance; it cannot
++authenticate a human reviewer or detect undisclosed AI assistance.
++
+ ## Step 4 — reconcile reviewer disagreements
+ 
+ ```powershell

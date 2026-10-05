@@ -20,6 +20,10 @@ const state = {
   evidenceEditor: null,
   evidenceDirty: false,
   showArchived: false,
+  resumeData: null,
+  resumeDraft: null,
+  resumeDirty: false,
+  resumeFileStatus: "",
   matchMetadata: null,
   matchHistory: [],
   comparison: null,
@@ -70,7 +74,7 @@ const skillClaims = () => {
 const skillLabel = (key) =>
   state.assessmentCatalog.find((item) => item.skill_key === key)?.label || key;
 const topicLabel = (value) => value.replaceAll("_", " ");
-const brand = `<div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M7 24V8l18 16V8M7 8h7M18 24h7" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Career Navigator<small>ASSESS. REFLECT. GROW.</small></span></div>`;
+const brand = `<div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M7 24V8l18 16V8M7 8h7M18 24h7" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Career Navigator<small>YOUR CAREER WORKSPACE</small></span></div>`;
 
 function showNotice(message, success = false) {
   clearTimeout(noticeTimer);
@@ -88,7 +92,7 @@ async function request(
   { method = "GET", body, auth = true, retry = true, timeout = 15000 } = {},
 ) {
   const headers = { Accept: "application/json" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (body !== undefined && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
   if (auth) headers.Authorization = `Bearer ${state.token}`;
   let response;
   try {
@@ -97,7 +101,7 @@ async function request(
       headers,
       cache: "no-store",
       credentials: "omit",
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
       signal: AbortSignal.timeout(timeout),
     });
   } catch {
@@ -198,25 +202,25 @@ async function withBusy(button, action) {
 function renderAuth(email = "") {
   const registering = state.authMode === "register";
   root.innerHTML = `<div class="auth-layout">
-    <aside class="auth-story">${brand}<div><span class="eyebrow">Your next step starts with evidence</span><h1>Know where you are.<br>See what comes next.</h1><p class="intro">Explore your SQL, Python and HTTP API knowledge, understand your results, and make your next practice session count.</p>
-      <div class="story-steps"><div class="story-detail"><span class="step-number">01</span><div><strong>Bring your perspective</strong><p class="muted">Record how you currently rate a skill.</p></div></div><div class="story-detail"><span class="step-number">02</span><div><strong>Put it into practice</strong><p class="muted">Choose a skill and answer six foundation questions.</p></div></div><div class="story-detail"><span class="step-number">03</span><div><strong>Explore the evidence</strong><p class="muted">Review feedback and areas that need more practice or assessment.</p></div></div></div>
+    <aside class="auth-story">${brand}<div><span class="eyebrow">Your next step starts with evidence</span><h1>Know where you are.<br>See what comes next.</h1><p class="intro">Bring your resume, discover live opportunities and build evidence for the skills that matter to your next role.</p>
+      <div class="story-steps"><div class="story-detail"><span class="step-number">01</span><div><strong>Make your experience visible</strong><p class="muted">Add your resume, skills, projects and certificates.</p></div></div><div class="story-detail"><span class="step-number">02</span><div><strong>Find your next opportunity</strong><p class="muted">Compare selected live job postings with your records.</p></div></div><div class="story-detail"><span class="step-number">03</span><div><strong>Build a path forward</strong><p class="muted">Take a focused diagnostic and follow linked learning resources.</p></div></div></div>
     </div><p class="auth-footer">AI Career Navigator · Research prototype<br>SQL · Python · REST API HTTP foundations</p></aside>
-    <main class="auth-main" id="main-content"><div class="auth-card"><span class="badge neutral">Candidate workspace</span><h2>${registering ? "Create your account" : "Welcome back"}</h2><p class="muted">${registering ? "Start your assessment journey." : "Sign in to your assessment workspace."}</p>
+    <main class="auth-main" id="main-content"><div class="auth-card"><span class="badge neutral">Candidate workspace</span><h2>${registering ? "Create your account" : "Welcome back"}</h2><p class="muted">${registering ? "Create a workspace for your next career move." : "Continue building your career with evidence."}</p>
       <div class="tabs" aria-label="Account access"><button type="button" data-action="login-tab" class="${registering ? "" : "active"}" aria-pressed="${!registering}">Sign in</button><button type="button" data-action="register-tab" class="${registering ? "active" : ""}" aria-pressed="${registering}">Create account</button></div>
       <form id="auth-form">${registering ? '<label>Full name<input name="name" type="text" autocomplete="name" maxlength="120" required></label>' : ""}<label>Email<input name="email" type="email" autocomplete="username" value="${escapeHtml(email)}" required></label><label>Password<input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" ${registering ? 'minlength="8"' : ""} required></label>${registering ? '<p class="small muted">Use at least 8 characters.</p>' : ""}<button class="button primary" type="submit">${registering ? "Create account & continue" : "Sign in to workspace"} <span aria-hidden="true">→</span></button></form>
       <p class="auth-note">Draft assessment content awaiting human review. Results describe these questions; they are not a validated proficiency rating.</p></div></main></div>`;
 }
 
 function renderShell() {
-  const onHistory = state.view === "history";
-  const onEvidence = state.view === "evidence";
-  const onMatches = state.view === "matches";
-  const onJobs = state.view === "jobs";
-  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence || onMatches || onJobs ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence && !onMatches && !onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button><button class="nav-button ${onMatches ? "active" : ""}" data-action="matches" ${onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">⌕</span>Compare a job</button><button class="nav-button ${onJobs ? "active" : ""}" data-action="jobs" ${onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◎</span>Live jobs</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>Three foundation diagnostics<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onJobs ? "Live jobs" : onMatches ? "Job comparison" : onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "Assessments"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
+  const links = [["overview", "home", "Overview"], ["resume", "resume", "Resume & skills"], ["jobs", "jobs", "Live opportunities"], ["matches", "matches", "Job alignment"], ["evidence", "evidence", "Projects & certificates"], ["history", "history", "My assessments"]];
+  const active = ["quiz", "results", "roadmap"].includes(state.view) ? "history" : state.view;
+  const label = links.find(([key]) => key === active)?.[2] || "Workspace";
+  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<span class="sidebar-caption">CANDIDATE WORKSPACE</span><nav aria-label="Main navigation">${links.map(([key, icon, title]) => `<button class="nav-button ${active === key ? "active" : ""}" data-action="${key}" ${active === key ? 'aria-current="page"' : ""}><span class="nav-symbol">${uiIcon(icon)}</span>${title}</button>`).join("")}</nav><div class="sidebar-note"><span class="sidebar-spark">${uiIcon("evidence")}</span><strong>Let your work speak.</strong><p>Connect your experience with the next opportunity.</p><button class="text-button" data-action="evidence">Build your evidence →</button></div><span class="sidebar-footer">AI Career Navigator · Research prototype</span></aside><div class="workspace-main"><header class="topbar"><span class="breadcrumb">My workspace <span>/</span> <strong>${label}</strong></span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
   const main = document.querySelector("#main-content");
   if (state.view === "quiz") main.innerHTML = quizMarkup();
   else if (state.view === "results") main.innerHTML = resultsMarkup();
   else if (state.view === "roadmap") main.innerHTML = roadmapMarkup();
+  else if (state.view === "resume") main.innerHTML = resumeMarkup();
   else if (state.view === "evidence") main.innerHTML = evidenceMarkup();
   else if (state.view === "matches") main.innerHTML = matchesMarkup();
   else if (state.view === "jobs") main.innerHTML = jobsMarkup();
@@ -320,7 +324,7 @@ function overviewMarkup() {
       attempt.skill_key === state.selectedSkill &&
       attempt.status === "in_progress",
   );
-  return `<div class="page-intro"><span class="eyebrow">Your learning workspace</span><h1>Build a clearer picture of your skills.</h1><p class="muted">Choose a skill, add your perspective, and use assessment evidence to plan your next steps.</p></div>
+  return `${dashboardLeadMarkup()}
     <div class="tabs assessment-picker" role="group" aria-label="Choose assessment skill">${state.assessmentCatalog.map((item) => `<button type="button" data-action="select-assessment" data-skill="${escapeHtml(item.skill_key)}" class="${state.selectedSkill === item.skill_key ? "active" : ""}" aria-pressed="${state.selectedSkill === item.skill_key}">${escapeHtml(item.label)}</button>`).join("")}</div>
     <div class="overview-grid"><section class="panel assessment-card"><div class="button-row spread"><span class="badge">Available assessment</span><span class="small muted">Foundations · v1</span></div><h2>${escapeHtml(meta.title)}</h2><p class="muted">A short diagnostic sampling the topics below. Use it to identify what to practise or assess next.</p><div class="topic-chips">${meta.topics.map((topic) => `<span>${escapeHtml(topicLabel(topic))}</span>`).join("")}</div><div class="assessment-meta"><div><strong>${meta.question_count}</strong><span>Questions</span></div><div><strong>${meta.topics.length}</strong><span>Topics</span></div><div><strong>Untimed</strong><span>Go at your pace</span></div></div><button class="button primary" data-action="${pending ? "open-attempt" : "start"}" data-skill="${escapeHtml(meta.skill_key)}" ${pending ? `data-id="${escapeHtml(pending.id)}"` : ""}>${pending ? "Continue assessment" : `Start ${escapeHtml(meta.label)} assessment`} <span aria-hidden="true">→</span></button><p class="section-note">You may skip a question. It will remain unassessed.</p></section>
     <section class="panel claim-panel"><span class="eyebrow">Your perspective</span><h2>Self-reported ${escapeHtml(meta.label)} skill</h2>${claims.length ? (claims.length === 1 ? `<div class="claim-value">${escapeHtml(claims[0].proficiency)}<small> / 10</small></div>` : `<ul class="claim-list">${claims.map((claim) => `<li>${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10</li>`).join("")}</ul>`) + '<p class="muted">This is your own rating. Assessment evidence is recorded separately.</p>' : '<p class="muted">Optional: how would you rate your current skill?</p><form id="claim-form"><label>Rating from 1 to 10<input type="number" name="proficiency" min="1" max="10" step="1" placeholder="1–10" required></label><button class="button secondary" type="submit">Save my rating</button></form><p class="section-note">This is a self-report, not a verified score.</p>'}</section></div>
@@ -514,6 +518,9 @@ async function loadWorkspace() {
     ) || state.assessmentCatalog[0];
   state.selectedSkill = state.metadata.skill_key;
   state.history = history.attempts;
+  await loadResume();
+  await loadEvidence();
+  await loadJobs({ q: "", location: "", board: "", page: 1 });
 }
 
 async function openAttempt(id) {
@@ -616,6 +623,13 @@ root.addEventListener("submit", (event) => {
       await loadWorkspace();
       renderShell();
       focusContent();
+    } else if (form.id === "resume-form") {
+      await saveResume(values);
+    } else if (form.id === "profile-skill-form") {
+      const data = await request("/api/skills", { method: "POST", body: { skill_name: values.get("skill_name").trim(), proficiency: Number(values.get("proficiency")) } });
+      state.skills.push(data.skill);
+      renderShell();
+      showNotice("Self-reported skill saved.", true);
     } else if (form.id === "job-filter-form") {
       await submitJobFilters(values);
     } else if (form.id === "job-compare-form") {
@@ -643,11 +657,23 @@ root.addEventListener("submit", (event) => {
 });
 
 root.addEventListener("input", (event) => {
+  if (event.target.closest("#resume-form") && ["text", "source_name"].includes(event.target.name)) {
+    state.resumeDraft[event.target.name] = event.target.value;
+    state.resumeDirty = true;
+    const badge = document.querySelector("#resume-status");
+    badge.textContent = "Unsaved changes"; badge.className = "badge amber";
+  }
   if (event.target.closest("#evidence-form")) state.evidenceDirty = true;
   if (event.target.closest("#match-form")) state.matchDirty = true;
 });
 
 root.addEventListener("change", (event) => {
+  if (event.target.id === "resume-file") {
+    const file = event.target.files[0];
+    if (state.resumeDirty && !window.confirm("Replace the current draft text with this file?")) { event.target.value = ""; return; }
+    void withBusy(event.target, () => uploadResume(file));
+    return;
+  }
   if (state.view !== "quiz" || event.target.name !== "answer") return;
   answersFor(state.attempt)[state.attempt.questions[state.index].id] =
     event.target.value;
@@ -662,6 +688,7 @@ root.addEventListener("click", (event) => {
     state.evidenceDirty &&
     [
       "overview",
+      "resume",
       "history",
       "evidence",
       "cancel-evidence",
@@ -675,6 +702,7 @@ root.addEventListener("click", (event) => {
     state.matchDirty &&
     [
       "overview",
+      "resume",
       "history",
       "evidence",
       "matches",
@@ -694,7 +722,7 @@ root.addEventListener("click", (event) => {
   }
   if (action === "logout") {
     if (
-      (hasUnsavedAnswers() || state.evidenceDirty || state.matchDirty) &&
+      (hasUnsavedAnswers() || state.evidenceDirty || state.matchDirty || state.resumeDirty) &&
       !window.confirm(
         "Signing out will clear your unsaved work in this tab. Sign out?",
       )
@@ -716,6 +744,7 @@ root.addEventListener("click", (event) => {
     state.showArchived = false;
     clearMatchState();
     clearJobsState();
+    state.resumeData = null; state.resumeDraft = null; state.resumeDirty = false; state.resumeFileStatus = "";
     state.drafts.clear();
     state.view = "overview";
     state.authMode = "login";
@@ -753,7 +782,25 @@ root.addEventListener("click", (event) => {
     return;
   }
   void withBusy(button, async () => {
-    if (action === "return-to-comparison") {
+    if (["resume", "reload-resume", "remove-resume"].includes(action)) {
+      if (action === "remove-resume") {
+        if (!window.confirm("Remove the saved resume from your profile? Earlier comparisons retain their own resume snapshots.")) return;
+        state.resumeData = await request("/api/resume", { method: "DELETE", body: { version: state.resumeData.version } });
+        resetResumeDraft();
+      } else if (action === "reload-resume") {
+        if (state.resumeDirty && !window.confirm("Discard the draft and use the currently saved resume?")) return;
+        await loadResume(); resetResumeDraft();
+      } else {
+        await loadResume();
+        if (!state.resumeDirty) resetResumeDraft();
+      }
+      state.evidenceEditor = null; state.evidenceDirty = false; clearMatchDraft();
+      state.view = "resume"; renderShell(); focusContent();
+    } else if (action === "remove-skill") {
+      await request(`/api/skills/${button.dataset.id}`, { method: "DELETE" });
+      state.skills = state.skills.filter((s) => String(s.id) !== button.dataset.id);
+      renderShell(); showNotice("Skill rating removed. Earlier snapshots are retained.", true);
+    } else if (action === "return-to-comparison") {
       state.comparison = state.assessmentReturn;
       clearMatchDraft();
       state.view = "matches";
@@ -901,7 +948,7 @@ function hasUnsavedAnswers() {
 }
 
 window.addEventListener("beforeunload", (event) => {
-  if (!hasUnsavedAnswers() && !state.evidenceDirty && !state.matchDirty) return;
+  if (!hasUnsavedAnswers() && !state.evidenceDirty && !state.matchDirty && !state.resumeDirty) return;
   event.preventDefault();
   event.returnValue = "";
 });

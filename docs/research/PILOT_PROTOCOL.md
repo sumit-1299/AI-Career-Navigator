@@ -1,6 +1,12 @@
 # Pilot protocol — extraction and learning-action evaluation
 
 Version: **career-pilot-protocol-v1**. Written 29 September 2026.
+Administrative amendment, 5 October 2026: submission moved to 8 October; the
+proposed schedule below is updated. Outcomes have not been supplied. Study rules
+are unchanged. Record any actual prior collection/exposure rather than treating
+this amendment as a fresh preregistration. The resume/UI batch changes displayed
+candidate context: hold that context constant across RQ2 conditions; it does not
+test the benefit of resume extraction. Freeze the actual updated commit used.
 Status: **proposed; no new observations collected by this document**.
 Code baseline inspected: `272efb0`. Freeze the actual code commit and protocol
 before collecting outcomes; use [study_register.template.json](../../research/protocol/study_register.template.json).
@@ -19,7 +25,7 @@ Suggested feasibility targets, not statistically justified sample sizes:
 - RQ2: six adult volunteers, preferably two per supported skill, one target skill
   and its three topics per person. Two qualified raters review the task evidence.
   More participants may be added only under a revised plan fixed before outcomes.
-- Complete the feasible observations by 1 October; prepare the review on 2 October.
+- Complete feasible observations by 6 October; prepare submission on 7 October.
   If fewer cases are available, report the actual count and missing work. Do not
   call this sample representative of students, employers or the labour market.
 
@@ -283,7 +289,7 @@ bias, assistance/guessing, clustered employers, limited language/role coverage,
 fixed questions and missing responses that are not random. Snapshot traceability
 improves auditability but does not remove these threats.
 
-## 6. What can be presented on 3 October
+## 6. What can be submitted on 8 October
 
 | Evidence available | Defensible presentation |
 | --- | --- |

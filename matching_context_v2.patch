@@ -1,0 +1,551 @@
+diff --git a/backend/services/job_matching.py b/backend/services/job_matching.py
+index f77da3f..bae39db 100644
+--- a/backend/services/job_matching.py
++++ b/backend/services/job_matching.py
+@@ -5,38 +5,93 @@ import re
+ from services.semantic_encoder import MODEL_ID, MODEL_REVISION, get_encoder
+ from services.skill_catalog import BY_KEY, CATALOG_VERSION, RELATIONS, SKILLS, canonical_key, keyword_keys
+ 
+-POLICY_VERSION = "pasted-job-comparison-v1"
++POLICY_VERSION = "pasted-job-comparison-v2"
++EXTRACTION_VERSION = "skill-extraction-context-v2"
+ SIMILARITY_THRESHOLD = 0.58
+ MARGIN_THRESHOLD = 0.08
+ NEGATION = re.compile(r"\b(no|not|without|never|neither|nor|cannot)\b|\b(?:isn|aren|wasn|weren|don|doesn|didn|needn|mustn|shouldn|can|couldn|wouldn|won)['’]t\b", re.I)
+ OPTIONAL = re.compile(r"\b(preferred|optional|bonus|desirable)\b|nice[ -]to[ -]have", re.I)
+ REQUIRED = re.compile(r"\b(required|requirements|essential|must)\b|minimum qualifications", re.I)
+ 
++REQUIRED_HEADINGS = {"requirements", "required skills", "minimum qualifications", "must have",
++    "qualifications", "what we are looking for", "what we are looking for in you",
++    "who you are", "what you bring", "your skills", "skills and experience"}
++OPTIONAL_HEADINGS = {"preferred", "preferred skills", "nice to have", "nice-to-have", "optional",
++    "nice-to-have skills", "nice-to-have skills we would value", "additional skills",
++    "additional skills that you might also bring"}
++ROLE_HEADINGS = {"responsibilities", "about the role", "the role entails", "what you will do",
++    "what you'll do", "what you’ll do", "what your day will look like", "what you will focus on",
++    "your role", "duties"}
++BACKGROUND_HEADINGS = {"about us", "about the company", "company overview", "company background",
++    "our company", "benefits", "what we offer", "what we offer you", "what we offer colleagues",
++    "about our company", "who we are"}
++# This is a narrow wording rule, not named-entity recognition. It does not contain
++# employer names or case IDs from the development packet.
++PORTFOLIO_STATEMENT = re.compile(
++    r"^.{1,80}?\b(?:has|have)\s+(?:(?:substantial|many|several|numerous|existing|various|multiple)\s+)?"
++    r"(?:projects|products)\s+(?:in|using|built with)\b", re.I)
++COMPANY_STATEMENT = re.compile(
++    r"^(?:(?:our|the)\s+(?:company|business|organisation|organization))\s+"
++    r"(?:uses?|offers?|provides?|develops?|builds?|maintains?)\b", re.I)
++ROLE_REFERENCE = re.compile(
++    r"\b(?:you|your|candidates?|applicants?|this role|the role|this position|the position|"
++    r"this job|the team|our team)\b", re.I)
++ROLE_ACTION = re.compile(
++    r"^(?:design|build|write|develop|maintain|implement|use|work|operate|deploy|manage|lead|"
++    r"create|test|debug|support|contribute|architect|improve)\b", re.I)
++ROLE_QUALIFICATION = re.compile(r"^(?:experience|knowledge|proficiency|familiarity|skills?)\s+(?:with|in|of)\b", re.I)
++# Split a mixed company/candidate sentence only at an explicit candidate clause.
++# General mixed negation remains subject to the existing manual-review policy.
++PASSAGE_BOUNDARY = re.compile(
++    r"[\r\n;]+|(?<=[.!?])\s+|,?\s+\b(?:and|but|while|whereas)\s+"
++    r"(?=(?:you\b|your\b|this role\b|the role\b|this position\b|the position\b))", re.I)
++
++
++def review_context(text, background):
++    if NEGATION.search(text):
++        return "negation", "Negation detected; read this passage before treating it as a requirement."
++    role_link = ROLE_REFERENCE.search(text) or ROLE_ACTION.search(text) or ROLE_QUALIFICATION.search(text)
++    if not role_link and (PORTFOLIO_STATEMENT.search(text) or COMPANY_STATEMENT.search(text)):
++        return "company_context", "Company or product-portfolio wording. Confirm that this skill applies to the candidate's work."
++    if background and not (role_link or REQUIRED.search(text) or OPTIONAL.search(text)):
++        return "background_section", "Company-background or benefits section. Confirm a role-specific requirement before using this passage."
++    return None, None
++
+ 
+ def fragments(description, max_fragments=60):
+     parts = []
+     priority = "mentioned"
+-    for raw in re.split(r"[\r\n;]+|(?<=[.!?])\s+", description):
++    background = False
++    for raw in PASSAGE_BOUNDARY.split(description):
+         text = raw.strip(" \t•*-–—")
+         if not text:
+             continue
+         heading = text.rstrip(":").casefold()
+-        if heading in {"requirements", "required skills", "minimum qualifications", "must have"}:
++        if heading in REQUIRED_HEADINGS:
+             priority = "required"
++            background = False
+             continue
+-        if heading in {"preferred", "preferred skills", "nice to have", "nice-to-have", "optional"}:
++        if heading in OPTIONAL_HEADINGS:
+             priority = "optional"
++            background = False
++            continue
++        if heading in ROLE_HEADINGS:
++            priority = "mentioned"
++            background = False
+             continue
+-        if heading in {"responsibilities", "about us", "benefits", "about the role"}:
++        if heading in BACKGROUND_HEADINGS:
+             priority = "mentioned"
++            background = True
+             continue
+         importance = "optional" if OPTIONAL.search(text) else "required" if REQUIRED.search(text) else priority
++        review_code, review_reason = review_context(text, background)
+         # Bound each input while retaining every fragment. The encoder also rejects token overflow.
+         words = text.split()
+         for start in range(0, len(words), 45):
+             snippet = " ".join(words[start:start + 45])
+             parts.append({"text": snippet, "importance": importance,
+-                          "review_needed": bool(NEGATION.search(text))})
++                          "review_needed": review_reason is not None,
++                          "review_code": review_code, "review_reason": review_reason})
+     if len(parts) > max_fragments:
+         raise ValueError(f"This description exceeds the {max_fragments}-fragment comparison limit. Use a shorter excerpt in Compare a job; the full posting has not been compared.")
+     return parts
+@@ -85,7 +140,8 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
+     manual_review = []
+     for index, part in enumerate(parts):
+         if part["review_needed"]:
+-            manual_review.append({"text": part["text"], "reason": "Negation detected; read this passage before treating it as a requirement."})
++            manual_review.append({"text": part["text"], "reason": part["review_reason"],
++                                  "reason_code": part["review_code"]})
+             continue
+         direct = keyword_keys(part["text"])
+         found = [(key, {"method": "keyword", "text": part["text"], "importance": part["importance"]}) for key in direct]
+@@ -127,7 +183,8 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
+                             "job_sources": rows[key], "candidate_claims": support[key], "related_claims": related,
+                             "assessment": assessment, "guidance": guidance})
+     direct_rows = [row for row in result_rows if row["mapping"] == "keyword"]
+-    return {"policy_version": POLICY_VERSION, "catalog_version": CATALOG_VERSION, "mode": mode,
++    return {"policy_version": POLICY_VERSION, "extraction_version": EXTRACTION_VERSION,
++            "catalog_version": CATALOG_VERSION, "mode": mode,
+             "model": {"id": MODEL_ID, "revision": MODEL_REVISION, "runtime": "onnx-cpu", "pooling": "attention-mask-mean-l2", "max_tokens": 256} if mode == "semantic" else None,
+             "suggestion_policy": {"minimum_cosine": SIMILARITY_THRESHOLD, "minimum_margin": MARGIN_THRESHOLD,
+                                   "validation_status": "heuristic_not_calibrated"} if mode == "semantic" else None,
+diff --git a/backend/services/research_evaluation.py b/backend/services/research_evaluation.py
+index 799a42a..f6a50d2 100644
+--- a/backend/services/research_evaluation.py
++++ b/backend/services/research_evaluation.py
+@@ -11,7 +11,7 @@ import re
+ import subprocess
+ from uuid import uuid4
+ 
+-from services.job_matching import build_comparison, SIMILARITY_THRESHOLD, MARGIN_THRESHOLD
++from services.job_matching import build_comparison, SIMILARITY_THRESHOLD, MARGIN_THRESHOLD, EXTRACTION_VERSION
+ from services.semantic_encoder import MODEL_ID, MODEL_REVISION, get_encoder
+ from services.skill_catalog import CATALOG_VERSION, SKILLS
+ 
+@@ -323,7 +323,7 @@ def provenance():
+     return {'git_commit': commit, 'source_file_sha256': files, 'python': platform.python_version(),
+             'dependencies': versions, 'model': {'id': MODEL_ID, 'revision': MODEL_REVISION},
+             'minimum_cosine': SIMILARITY_THRESHOLD, 'minimum_margin': MARGIN_THRESHOLD,
+-            'catalog_version': CATALOG_VERSION, 'fragment_limit': 300,
++            'catalog_version': CATALOG_VERSION, 'extraction_version': EXTRACTION_VERSION, 'fragment_limit': 300,
+             'candidate_context': 'empty for every case; extraction only'}
+ 
+ 
+diff --git a/backend/services/skill_catalog.py b/backend/services/skill_catalog.py
+index 7b2f2e0..861b3e1 100644
+--- a/backend/services/skill_catalog.py
++++ b/backend/services/skill_catalog.py
+@@ -14,7 +14,7 @@ SKILLS = [
+     {"key": "sql", "label": "SQL", "aliases": ["SQL", "Structured Query Language"],
+      "anchor": "SQL relational database queries. Retrieve and filter table rows, join tables and aggregate grouped records.",
+      "esco_uri": ESCO_BASE + "598de5b0-5b58-4ea7-8058-a4bc4d18c742"},
+-    {"key": "rest_api", "label": "REST APIs", "aliases": ["REST API", "REST APIs", "RESTful API", "RESTful APIs", "RESTful services", "Representational State Transfer"],
++    {"key": "rest_api", "label": "REST APIs", "aliases": ["REST API", "REST APIs", "RESTful API", "RESTful APIs", "RESTful services", "Representational State Transfer", "HTTP/REST"],
+      "anchor": "REST API development. Design HTTP endpoints for web services with JSON requests and responses, resources, GET, POST, PUT and DELETE.",
+      "esco_uri": None},
+     {"key": "django", "label": "Django", "aliases": ["Django"],
+@@ -53,6 +53,9 @@ PATTERNS = {
+     skill["key"]: re.compile(r"(?<!\w)(?:" + "|".join(re.escape(alias).replace(r"\ ", r"\s+") for alias in sorted(skill["aliases"], key=len, reverse=True)) + r")(?!\w)", re.I)
+     for skill in SKILLS
+ }
++# Explicit slash notation is technical REST wording. Bare "rest", generic HTTP,
++# JSON and APIs stay outside the alias rule. Allow spacing around the slash.
++HTTP_REST = re.compile(r"(?<!\w)HTTP\s*/\s*REST(?!\w)", re.I)
+ 
+ 
+ def canonical_key(name):
+@@ -60,4 +63,5 @@ def canonical_key(name):
+ 
+ 
+ def keyword_keys(text):
+-    return [key for key, pattern in PATTERNS.items() if pattern.search(text)]
++    return [key for key, pattern in PATTERNS.items()
++            if pattern.search(text) or (key == "rest_api" and HTTP_REST.search(text))]
+diff --git a/backend/static/matching.js b/backend/static/matching.js
+index 12d06a0..e980339 100644
+--- a/backend/static/matching.js
++++ b/backend/static/matching.js
+@@ -73,9 +73,9 @@ function comparisonMarkup() {
+     <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>${escapeHtml(result.interpretation)}</p></div>
+     <div class="section-label"><h2>Skills and supporting records</h2>${canCompare ? `<button class="text-button" data-action="compare-${otherMode}">Try ${otherMode === "keyword" ? "keyword baseline" : "semantic suggestions"}</button>` : ""}</div>
+     ${result.skills.length ? `<div class="match-skill-list">${result.skills.map(comparisonSkillMarkup).join("")}</div>` : '<div class="empty-state"><div><strong>No skill mappings found in this vocabulary</strong><p>The job may require skills outside the current scope. This does not mean you are unsuitable.</p></div></div>'}
+-    ${result.manual_review.length ? `<section class="panel match-review"><h2>Read these passages manually</h2><p class="small muted">Negated or qualified statements were excluded from automatic requirement mapping.</p>${result.manual_review.map((item) => `<blockquote class="match-quote">${escapeHtml(item.text)}</blockquote>`).join("")}</section>` : ""}
++    ${result.manual_review.length ? `<section class="panel match-review"><h2>Read these passages manually</h2><p class="small muted">These passages need context before their skills can be treated as candidate requirements.</p>${result.manual_review.map((item) => `<blockquote class="match-quote">${escapeHtml(item.text)}<footer>${escapeHtml(item.reason || "Review this passage before using it as a requirement.")}</footer></blockquote>`).join("")}</section>` : ""}
+     <details class="panel match-review"><summary>Unmapped text and profile tags</summary><p class="small muted">${escapeHtml(result.scope)}</p><h3>Job passages without a mapping</h3>${result.unassigned_fragments.length ? `<ul>${result.unassigned_fragments.map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : '<p class="small muted">No whole passage was left unmapped. Individual requirements can still be missed.</p>'}<h3>Profile tags outside the vocabulary</h3><p class="small muted">${escapeHtml(result.unmapped_candidate_tags.join(", ") || "None in this snapshot.")}</p></details>
+-    <details class="panel match-review"><summary>Source and comparison method</summary><p class="small muted">${comparisonSourceLabel(saved.job)}</p>${saved.job.source_url ? evidenceSourceMarkup(saved.job.source_url) : ""}<pre class="match-source-text">${escapeHtml(saved.job.description)}</pre><p class="small muted">Profile captured ${escapeHtml(dateLabel(saved.candidate_snapshot.captured_at))}. ${saved.candidate_snapshot.evidence.length} active evidence records were included. Saved snapshots retain their original details even if the profile is edited or an item is archived later.</p><p class="small muted">Policy: ${escapeHtml(result.policy_version)} · Vocabulary: ${escapeHtml(result.catalog_version)}</p>${result.model ? `<p class="small muted">Model: ${escapeHtml(result.model.id)}<br>Revision: ${escapeHtml(result.model.revision)}<br>Semantic suggestions use cosine ≥ ${result.suggestion_policy.minimum_cosine} and a best-versus-next margin ≥ ${result.suggestion_policy.minimum_margin}. These are uncalibrated prototype settings, not confidence probabilities.</p>` : '<p class="small muted">Keyword mode uses only the curated names and aliases. No embedding model was run.</p>'}</details>${matchHistoryMarkup()}`;
++    <details class="panel match-review"><summary>Source and comparison method</summary><p class="small muted">${comparisonSourceLabel(saved.job)}</p>${saved.job.source_url ? evidenceSourceMarkup(saved.job.source_url) : ""}<pre class="match-source-text">${escapeHtml(saved.job.description)}</pre><p class="small muted">Profile captured ${escapeHtml(dateLabel(saved.candidate_snapshot.captured_at))}. ${saved.candidate_snapshot.evidence.length} active evidence records were included. Saved snapshots retain their original details even if the profile is edited or an item is archived later.</p><p class="small muted">Policy: ${escapeHtml(result.policy_version)} · Vocabulary: ${escapeHtml(result.catalog_version)}${result.extraction_version ? ` · Extraction: ${escapeHtml(result.extraction_version)}` : ""}</p>${result.model ? `<p class="small muted">Model: ${escapeHtml(result.model.id)}<br>Revision: ${escapeHtml(result.model.revision)}<br>Semantic suggestions use cosine ≥ ${result.suggestion_policy.minimum_cosine} and a best-versus-next margin ≥ ${result.suggestion_policy.minimum_margin}. These are uncalibrated prototype settings, not confidence probabilities.</p>` : '<p class="small muted">Keyword mode uses curated names and aliases with context review rules. No embedding model was run.</p>'}</details>${matchHistoryMarkup()}`;
+ }
+ 
+ async function submitMatch(values) {
+diff --git a/backend/tests/test_job_context.py b/backend/tests/test_job_context.py
+new file mode 100644
+index 0000000..166f37a
+--- /dev/null
++++ b/backend/tests/test_job_context.py
+@@ -0,0 +1,124 @@
++"""Synthetic regression and counterexample checks; not independent research labels."""
++from pathlib import Path
++import sys
++import unittest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from services.job_matching import EXTRACTION_VERSION, build_comparison, fragments
++from services.skill_catalog import SKILLS, keyword_keys
++
++
++EMPTY = {'skills': [], 'evidence': [], 'sql_assessment': None}
++
++
++def compare(text, mode='keyword', encoder=None):
++    return build_comparison(text, EMPTY, mode, encoder=encoder)
++
++
++def keys(result):
++    return {row['skill_key'] for row in result['skills']}
++
++
++class JobContextTests(unittest.TestCase):
++    def test_explicit_http_rest_slash_wording_and_boundaries(self):
++        for phrase in ('HTTP/REST', 'http/rest', 'HTTP / REST', 'HTTP\t/\tREST'):
++            with self.subTest(phrase=phrase):
++                self.assertEqual(keyword_keys('Networking knowledge: ' + phrase), ['rest_api'])
++        for text in ('Take a rest after work.', 'Build HTTP and JSON endpoints.', 'Maintain APIs.',
++                     'HTTP/RESTaurant', 'XHTTP/REST', 'REST is a break in activity.'):
++            with self.subTest(text=text):
++                self.assertNotIn('rest_api', keyword_keys(text))
++
++    def test_company_portfolio_is_preserved_for_review_not_mapped(self):
++        text = 'Northstar has several projects in Python and Java. Build services in Rust.'
++        result = compare(text)
++        self.assertEqual(keys(result), set())
++        self.assertEqual(result['manual_review'][0]['text'], 'Northstar has several projects in Python and Java.')
++        self.assertEqual(result['manual_review'][0]['reason_code'], 'company_context')
++        self.assertIn('candidate', result['manual_review'][0]['reason'])
++        self.assertEqual(result['extraction_version'], EXTRACTION_VERSION)
++
++    def test_background_section_ends_at_role_and_qualification_headings(self):
++        for heading in ('Responsibilities', 'The role entails', 'What you will focus on', 'Who you are',
++                        'What we are looking for in you', 'Additional skills that you might also bring'):
++            with self.subTest(heading=heading):
++                result = compare('Company overview:\nPython and Java platforms.\n' + heading + ':\nSQL and Git.')
++                self.assertEqual(keys(result), {'sql', 'git'})
++                self.assertEqual(result['manual_review'][0]['reason_code'], 'background_section')
++
++    def test_direct_candidate_work_survives_inside_background_section(self):
++        for text in ('You will write Python code.', 'Develop Python services.',
++                     'Experience with Python.', 'Python knowledge is required.',
++                     'This role maintains Python services.'):
++            with self.subTest(text=text):
++                self.assertEqual(keys(compare('About us:\n' + text)), {'python'})
++
++    def test_candidate_or_team_portfolio_is_not_mistaken_for_company_background(self):
++        for text in ('You have several projects in Python.',
++                     'The ideal candidate has projects in Python.',
++                     'An applicant has products built with Python.',
++                     'The team has projects in Python.',
++                     'Our team has products using Python.',
++                     'We have projects in Python which you will maintain.'):
++            with self.subTest(text=text):
++                self.assertEqual(keys(compare(text)), {'python'})
++
++    def test_unqualified_team_stack_is_not_silently_filtered(self):
++        self.assertEqual(keys(compare('We use Python and Docker to build our services.')), {'python', 'docker'})
++        self.assertEqual(keys(compare('Maintain our Python projects.')), {'python'})
++
++    def test_mixed_company_and_candidate_clauses_keep_candidate_skills(self):
++        for boundary in (', but ', ', and ', ' while ', '; ', '. '):
++            with self.subTest(boundary=boundary):
++                result = compare('Our company develops Python products' + boundary + 'you will build Java services.')
++                self.assertEqual(keys(result), {'java'})
++                self.assertEqual(len(result['manual_review']), 1)
++
++    def test_background_mention_does_not_cancel_separate_role_requirement(self):
++        result = compare('Our company uses Python and Java.\nRequirements:\nPython is required.')
++        self.assertEqual(keys(result), {'python'})
++        self.assertEqual([source['text'] for source in result['skills'][0]['job_sources']], ['Python is required.'])
++        self.assertEqual(len(result['manual_review']), 1)
++
++    def test_nice_to_have_variants_remain_optional(self):
++        for heading in ('Nice-to-have skills', 'Additional skills that you might also bring'):
++            result = compare(heading + ':\nHTTP/REST\nDocker')
++            self.assertEqual(keys(result), {'rest_api', 'docker'})
++            self.assertTrue(all(source['importance'] == 'optional' for row in result['skills'] for source in row['job_sources']))
++
++    def test_long_background_passage_keeps_context_across_fragment_chunks(self):
++        text = 'Orion has many projects in ' + ' '.join(['Rust'] * 70) + ' and Python.'
++        result = compare(text)
++        self.assertEqual(keys(result), set())
++        self.assertEqual(len(result['manual_review']), 2)
++        self.assertIn('Python', result['manual_review'][-1]['text'])
++        self.assertTrue(all(row['reason_code'] == 'company_context' for row in result['manual_review']))
++
++    def test_semantic_suggestions_cannot_restore_excluded_background(self):
++        class PythonEncoder:
++            def __init__(self):
++                self.inputs = []
++            def encode(self, texts):
++                self.inputs.extend(texts)
++                anchors = [skill['anchor'] for skill in SKILLS]
++                return [[float(i == (anchors.index(text) if text in anchors else 0))
++                         for i in range(len(SKILLS))] for text in texts]
++        encoder = PythonEncoder()
++        background = 'Our company develops Python products.'
++        result = compare(background, 'semantic', encoder)
++        self.assertEqual(keys(result), set())
++        self.assertNotIn(background, encoder.inputs)
++        self.assertEqual(result['manual_review'][0]['reason_code'], 'company_context')
++        # The stub would suggest Python for ordinary text, proving this assertion
++        # checks filtering before encoding rather than an encoder returning nothing.
++        self.assertEqual(keys(compare('Use an unfamiliar language.', 'semantic', encoder)), {'python'})
++
++    def test_negation_still_requires_review_instead_of_becoming_a_requirement(self):
++        result = compare('HTTP/REST is not required. Docker is required.')
++        self.assertEqual(keys(result), {'docker'})
++        self.assertEqual(result['manual_review'][0]['reason_code'], 'negation')
++        self.assertTrue(fragments('No Python required.')[0]['review_needed'])
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/backend/tests/test_job_matching.py b/backend/tests/test_job_matching.py
+index d684bf6..05965c2 100644
+--- a/backend/tests/test_job_matching.py
++++ b/backend/tests/test_job_matching.py
+@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ from app import create_app
+ from extensions import db
+ from models.job_comparison import JobComparison
+-from services.job_matching import build_comparison, fragments
++from services.job_matching import EXTRACTION_VERSION, build_comparison, fragments
+ from services.semantic_encoder import SemanticUnavailable, get_encoder, model_status
+ from services.skill_catalog import SKILLS, canonical_key, keyword_keys
+ from services.sql_assessment import QUESTIONS
+@@ -200,6 +200,14 @@ class JobComparisonApiTests(unittest.TestCase):
+         metadata = self.client.get("/api/job-matches/metadata", headers=self.headers).get_json()
+         self.assertEqual(len(metadata["skills"]), 10)
+ 
++    def test_context_review_reasons_and_extraction_version_are_saved(self):
++        saved = self.create(self.payload(description="Our company develops Python products. Responsibilities:\nUse HTTP/REST and Git."))
++        result = saved['result']
++        self.assertEqual({row['skill_key'] for row in result['skills']}, {'rest_api', 'git'})
++        self.assertEqual(result['extraction_version'], EXTRACTION_VERSION)
++        self.assertEqual(result['manual_review'][0]['reason_code'], 'company_context')
++        self.assertEqual(self.client.get(f"/api/job-matches/{saved['id']}", headers=self.headers).get_json()['comparison'], saved)
++
+     def test_comparison_does_not_change_assessment_or_roadmap(self):
+         attempt = self.assessment(("b", "c", "a", "b", "b", None))
+         path = f"/api/roadmaps/attempts/{attempt['id']}"
+diff --git a/backend/tests/test_live_jobs.py b/backend/tests/test_live_jobs.py
+index ea5badd..a422bf5 100644
+--- a/backend/tests/test_live_jobs.py
++++ b/backend/tests/test_live_jobs.py
+@@ -222,6 +222,7 @@ class LiveJobsApiTests(unittest.TestCase):
+         self.assertEqual(saved['job']['description'], job['description'])
+         self.assertEqual(saved['job']['content_hash'], job['content_hash'])
+         self.assertEqual(saved['result']['policy_version'], 'live-job-comparison-v1')
++        self.assertEqual(saved['result']['extraction_version'], 'skill-extraction-context-v2')
+         self.assertEqual(saved['candidate_snapshot']['skills'][0]['proficiency'], 7)
+         self.assertEqual(self.client.get('/api/job-matches/' + saved['id'], headers=self.other).status_code, 404)
+         self.assertEqual(self.client.get('/api/jobs/' + job['id'], headers=self.other).status_code, 200)
+diff --git a/docs/MATCHING_CONTEXT.md b/docs/MATCHING_CONTEXT.md
+new file mode 100644
+index 0000000..b640060
+--- /dev/null
++++ b/docs/MATCHING_CONTEXT.md
+@@ -0,0 +1,118 @@
++# Context and REST wording correction
++
++This change follows the AI-assisted development diagnostic. It corrects two
++observed disagreements without training or fine-tuning MiniLM, changing embedding
++thresholds, or running predictions on the packet's test jobs.
++
++## Behaviour
++
++- `HTTP/REST`, including case and spacing variants such as `HTTP / REST`, is a
++  curated REST API alias. Generic HTTP, JSON, APIs or the everyday word "rest"
++  do not become keyword matches. Semantic suggestions remain a separate channel.
++- Recognized company-background and benefits sections, explicit company
++  statements and narrow project-portfolio wording are routed to manual review
++  when no direct candidate-work cue is present. No employer name or case ID is
++  hard-coded in the rule.
++- Candidate references, imperative duties, qualifications and recognized role
++  headings preserve role-specific evidence. An explicit candidate clause can be
++  separated from a company statement in the same sentence.
++- Excluded text remains visible with a reason. It is filtered before both keyword
++  matching and semantic encoding so embeddings do not silently restore it.
++- Existing negation handling remains conservative. General mixed negation is not
++  solved by this change. Unknown headings, mixed subjects, broad team/technology
++  descriptions and implicit duties can still require human interpretation.
++
++These rules recognize some wording patterns; they do not fully understand who
++uses every technology. In particular, "we use Python" outside a recognized
++background section is not automatically suppressed because it can describe the
++candidate team's work. Review the preserved source text.
++
++## Versions and saved comparisons
++
++New results include `extraction_version: skill-extraction-context-v2`.
++Pasted comparisons use `pasted-job-comparison-v2`. Live comparisons retain their
++`live-job-comparison-v1` source/input policy and carry the new extraction version
++separately. Both versions are visible in the source/method details.
++
++The ten concept IDs, labels and annotation definitions are unchanged, so the
++frozen `backend-skills-2026-09-27-v1` vocabulary remains compatible. The additional
++alias is recorded by the new extraction version and source-file fingerprints.
++No dataset fingerprint or reference label was edited to accommodate the change.
++
++Previously saved comparisons keep their original result snapshots. Create a new
++comparison to use the new rules; reopening an old result does not rerun it. The
++UI supports snapshots without the new extraction-version or reason fields.
++
++## Development observations
++
++The exact same frozen dataset and AI draft were used before and after the change.
++Only the 12 development jobs were scored: 10 Canonical and 2 Razorpay postings.
++There were 120 possible job-skill cells, including 3 uncertain AI labels excluded
++for both methods. The remaining 117 cells contained 11 positive draft labels.
++
++| Method | Before F1 vs AI draft | After F1 vs AI draft | Before method-only / draft-only cells | After method-only / draft-only cells |
++| --- | ---: | ---: | ---: | ---: |
++| Keyword baseline | 0.9091 | 1.0000 | 1 / 1 | 0 / 0 |
++| Keywords + semantic suggestions | 0.9091 | 1.0000 | 1 / 1 | 0 / 0 |
++
++- `job-003`: the optional networking phrase `HTTP/REST` now supports REST APIs.
++- `job-011`: the company-wide Python project statement is retained for manual
++  review instead of being counted as a candidate requirement for the Rust role.
++
++**These are development results against unvalidated AI draft labels.** The same
++disagreements guided the rule changes. Perfect agreement here is not independent
++validation or evidence of generalization. Both methods still produce identical
++skill sets, so this run does not demonstrate a semantic advantage. SQL, Django,
++Flask, Git and JavaScript have no positive resolved draft labels in this subset.
++A broader independent human-labelled set is needed to evaluate those concepts.
++
++Dataset fingerprint:
++`33ea2f1ed0540a91a449c24de2b4692a9ae7e8f0314cb4733e0b2189ef9a4d04`
++
++AI draft hash:
++`bf87e10b290bb1a724034b2c9a64c276bb7fcf01cb54c3d52c9d27f1c8cee9f8`
++
++## Local check and reproduction
++
++After applying the patch, run the existing backend suite. Tests use isolated
++SQLite rather than your PostgreSQL application data:
++
++```powershell
++.\.venv\Scripts\python.exe -m unittest discover -s backend/tests -q
++```
++
++Development verification passed **122 tests**, including actual local MiniLM
++inference. The new regression checks cover alias boundaries, section changes,
++candidate/team counterexamples, mixed company/candidate clauses, long-fragment
++context, exclusion before semantic encoding, API persistence and version metadata.
++Browser checks cover visible review reasons, escaped text, legacy-shaped saved
++results and desktop/mobile overflow. These are software checks, not research
++validation.
++
++Keep the earlier run. Generate a distinctly named new development diagnostic:
++
++```powershell
++.\.venv\Scripts\python.exe .\backend\scripts\research_evaluation.py diagnose --dataset .\data\research\pilot-v1.json --draft .\data\research\pilot_v1_AI_DRAFT.json --out .\data\research\ai-diagnostic-context-v2
++```
++
++Open the new `report.md` and retain `results.json`, which records the extraction
++version and source/model fingerprints. A different or edited AI draft can produce
++different scores; do not edit labels to match the numbers above. The command
++refuses to overwrite existing output folders.
++
++Restart Flask and hard-refresh the candidate workspace. In **Compare a job**,
++use this fictional description with either method:
++
++```text
++About us:
++Our company develops Python products.
++Responsibilities:
++Build services using HTTP/REST and Git.
++Preferred skills:
++Docker.
++```
++
++Expected named skill cards: **REST APIs, Git, Docker**. The Python company
++statement appears under **Read these passages manually**, with its context reason.
++The original SQL assessment and candidate evidence still supply their own records;
++the matcher does not create or change proficiency scores.
+diff --git a/docs/PROJECT_STATUS.md b/docs/PROJECT_STATUS.md
+index dd462e6..7e3d64f 100644
+--- a/docs/PROJECT_STATUS.md
++++ b/docs/PROJECT_STATUS.md
+@@ -10,7 +10,7 @@ product vision; not every part of that vision is implemented.
+ | SQL assessment | Six-question diagnostic, immutable attempts, accuracy/coverage and topic feedback | Draft content; independent content review and proficiency validation pending |
+ | Learning roadmap | Curated SQL resources and practice steps linked to diagnostic results | Progress is self-reported; broader Python/REST assessment and roadmaps pending |
+ | Candidate evidence | Projects/certificates with skill tags, edits, version checks and archive/restore | Records remain unverified; no automatic credential verification |
+-| Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions for ten skill concepts | Thresholds uncalibrated; no overall hiring probability, suitability rank or proficiency score |
++| Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions, with context review rules and HTTP/REST wording support | Rules and thresholds need independent validation; no overall hiring probability, suitability rank or proficiency score |
+ | Live jobs | Selected Canonical/Razorpay boards, cached freshness, filtering and versioned comparison snapshots | Limited employer coverage, manual refresh, no market-wide feed |
+ | Evaluation tools | Frozen job exporter, independent annotation page, adjudication, paired extraction metrics and a separate AI-draft development diagnostic | Human validation remains pending; agreement with an AI draft is preliminary and cannot establish accuracy |
+ | Research contribution | Candidate evidence, uncertainty and source snapshots form the proposed approach | Literature gap/novelty and added decision value are not established by working features alone |
+@@ -23,6 +23,9 @@ improves skill-gap decisions. Synthetic smoke-test metrics are not research resu
+ The `diagnose` command can inspect development disagreements against an explicitly
+ AI-assisted draft while human validation is pending. It does not score test jobs,
+ train a model or satisfy the independent-review requirements of `evaluate`.
++The [context correction](MATCHING_CONTEXT.md) resolves two observed development
++disagreements against the AI draft. Both methods still produce identical skill
++sets on that subset; these rule changes do not establish a semantic advantage.
+ 
+ ## Earlier career knowledge base
+ 
+@@ -49,5 +52,6 @@ are not yet a fully integrated recommendation model or labelled training dataset
+ - [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md)
+ - [CANDIDATE_EVIDENCE.md](CANDIDATE_EVIDENCE.md)
+ - [SEMANTIC_MATCHING.md](SEMANTIC_MATCHING.md)
++- [MATCHING_CONTEXT.md](MATCHING_CONTEXT.md)
+ - [LIVE_JOBS.md](LIVE_JOBS.md)
+ - [RESEARCH_EVALUATION.md](RESEARCH_EVALUATION.md)
+diff --git a/docs/SEMANTIC_MATCHING.md b/docs/SEMANTIC_MATCHING.md
+index a9477b3..a574301 100644
+--- a/docs/SEMANTIC_MATCHING.md
++++ b/docs/SEMANTIC_MATCHING.md
+@@ -1,5 +1,9 @@
+ # Semantic skill matching — pasted job comparison
+ 
++For the current context rules, HTTP/REST alias and versioned development findings,
++see [MATCHING_CONTEXT.md](MATCHING_CONTEXT.md). The installation and earlier test
++counts below describe the original semantic-matching milestone.
++
+ This milestone adds **Compare a job** to the candidate workspace. It connects a pasted
+ job description to saved skill claims, active project/certification submissions and
+ the latest submitted SQL diagnostic. It provides a keyword baseline and real local
+@@ -119,8 +123,8 @@ not complete integration of all ESCO/O*NET occupations and skills.
+    or interpreted as verified proficiency.
+ 6. Display the latest submitted SQL assessment separately. An all-skipped latest
+    attempt remains unassessed; the matcher does not select the candidate's best score.
+-7. Preserve unmapped passages and candidate tags, and show negated statements for
+-   manual review. A missing record is treated as a need for evidence, not a demonstrated
++7. Preserve unmapped passages and candidate tags, and show negated statements and
++   suspected company-background context for manual review with reasons. A missing record is treated as a need for evidence, not a demonstrated
+    deficit. A mapped passage can still contain additional requirements that were missed.
+ 
+ Related technologies remain distinct: Django/Flask can be shown as related to Python,
+@@ -144,7 +148,8 @@ exceed its 256-word-piece limit. The initial use case is English backend job des
+ | Pooling | Attention-mask mean, followed by L2 normalization |
+ | Model status | Pretrained inference; no project-specific fine-tuning |
+ | Catalogue | `backend-skills-2026-09-27-v1` |
+-| Matching policy | `pasted-job-comparison-v1` |
++| Matching policy | `pasted-job-comparison-v2` |
++| Extraction rules | `skill-extraction-context-v2` |
+ 
+ The publisher's model card identifies the model as Apache-2.0. Model/tokenizer files
+ are downloaded from the publisher, not bundled into this repository. Setup records the

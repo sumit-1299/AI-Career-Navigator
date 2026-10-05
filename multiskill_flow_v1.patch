@@ -1,0 +1,1486 @@
+diff --git a/backend/routes/assessments.py b/backend/routes/assessments.py
+index 9daec38..a2d1a10 100644
+--- a/backend/routes/assessments.py
++++ b/backend/routes/assessments.py
+@@ -1,15 +1,17 @@
+-"""Authenticated SQL assessment lifecycle, scoped to the current candidate."""
++"""Authenticated multi-skill assessment lifecycle, scoped to the current candidate."""
+ 
+ from flask import Blueprint, current_app, request
+ from flask_jwt_extended import get_jwt_identity, jwt_required
+-from sqlalchemy import func, select, update
++from sqlalchemy import select, update
+ from sqlalchemy.exc import SQLAlchemyError
+ 
+ from extensions import db
+ from models.assessment_attempt import AssessmentAttempt, utc_now
+ from models.skill import Skill
+ from models.user import User
+-from services.sql_assessment import ASSESSMENT, QUESTIONS, grade_answers, new_snapshot
++from services.sql_assessment import grade_answers
++from services.assessment_catalog import BANKS, new_snapshot, public_description
++from services.skill_catalog import canonical_key
+ 
+ 
+ assessments_bp = Blueprint("assessments", __name__, url_prefix="/api/assessments")
+@@ -33,28 +35,41 @@ def owned_attempt(attempt_id, user_id):
+     )).scalar_one_or_none()
+ 
+ 
+-@assessments_bp.get("/sql")
++@assessments_bp.get("/catalog")
+ @jwt_required()
+-def sql_description():
++def catalog():
+     if current_user_id() is None:
+         return error("The candidate account is unavailable. Log in again.", 401)
+-    return {"status": "success", "assessment": {**ASSESSMENT, "question_count": len(QUESTIONS)}}
++    return {"status": "success", "assessments": [public_description(key) for key in BANKS]}
+ 
+ 
+-@assessments_bp.post("/sql/attempts")
++@assessments_bp.get("/<skill_key>")
+ @jwt_required()
+-def start_sql_attempt():
++def description(skill_key):
++    if current_user_id() is None:
++        return error("The candidate account is unavailable. Log in again.", 401)
++    if skill_key not in BANKS:
++        return error("Assessment skill not found.", 404)
++    return {"status": "success", "assessment": public_description(skill_key)}
++
++
++@assessments_bp.post("/<skill_key>/attempts")
++@jwt_required()
++def start_attempt(skill_key):
+     user_id = current_user_id()
+     if user_id is None:
+         return error("The candidate account is unavailable. Log in again.", 401)
++    if skill_key not in BANKS:
++        return error("Assessment skill not found.", 404)
+     if request.get_json(silent=True) != {}:
+         return error("Send an empty JSON object {} to start an attempt.", 400)
+-    claims = db.session.execute(select(Skill).where(
+-        Skill.user_id == user_id, func.lower(func.trim(Skill.skill_name)) == "sql"
+-    )).scalars().all()
++    claims = [claim for claim in db.session.execute(select(Skill).where(
++        Skill.user_id == user_id
++    ).order_by(Skill.id)).scalars().all() if canonical_key(claim.skill_name) == skill_key]
++    snapshot = new_snapshot(skill_key)
+     attempt = AssessmentAttempt(
+-        user_id=user_id, skill_key=ASSESSMENT["skill_key"],
+-        assessment_version=ASSESSMENT["version"], question_snapshot=new_snapshot(),
++        user_id=user_id, skill_key=skill_key,
++        assessment_version=snapshot["metadata"]["version"], question_snapshot=snapshot,
+         self_reported_claims=[
+             {"skill_id": claim.id, "skill_name": claim.skill_name, "proficiency": claim.proficiency}
+             for claim in claims
+@@ -65,20 +80,26 @@ def start_sql_attempt():
+         db.session.commit()
+     except SQLAlchemyError:
+         db.session.rollback()
+-        current_app.logger.exception("Could not start SQL assessment")
++        current_app.logger.exception("Could not start assessment")
+         return error("Could not save the assessment attempt.", 500)
+     return {"status": "success", "attempt": attempt.to_dict()}, 201
+ 
+ 
+-@assessments_bp.get("/sql/attempts")
++@assessments_bp.get("/attempts")
++@assessments_bp.get("/<skill_key>/attempts")
+ @jwt_required()
+-def list_sql_attempts():
++def list_attempts(skill_key=None):
+     user_id = current_user_id()
+     if user_id is None:
+         return error("The candidate account is unavailable. Log in again.", 401)
+-    attempts = db.session.execute(select(AssessmentAttempt).where(
+-        AssessmentAttempt.user_id == user_id, AssessmentAttempt.skill_key == "sql"
+-    ).order_by(AssessmentAttempt.created_at.desc(), AssessmentAttempt.id.desc()).limit(50)).scalars().all()
++    if skill_key is not None and skill_key not in BANKS:
++        return error("Assessment skill not found.", 404)
++    query = select(AssessmentAttempt).where(AssessmentAttempt.user_id == user_id)
++    if skill_key is not None:
++        query = query.where(AssessmentAttempt.skill_key == skill_key)
++    attempts = db.session.execute(query.order_by(
++        AssessmentAttempt.created_at.desc(), AssessmentAttempt.id.desc()
++    ).limit(50)).scalars().all()
+     return {
+         "status": "success", "limit": 50,
+         "attempts": [attempt.to_dict(include_questions=False) for attempt in attempts],
+@@ -128,6 +149,6 @@ def submit_attempt(attempt_id):
+         db.session.refresh(attempt)
+     except SQLAlchemyError:
+         db.session.rollback()
+-        current_app.logger.exception("Could not submit SQL assessment")
++        current_app.logger.exception("Could not submit assessment")
+         return error("Could not save the assessment result.", 500)
+     return {"status": "success", "attempt": attempt.to_dict()}
+diff --git a/backend/routes/job_matches.py b/backend/routes/job_matches.py
+index d7b01ef..20b443f 100644
+--- a/backend/routes/job_matches.py
++++ b/backend/routes/job_matches.py
+@@ -12,6 +12,7 @@ from models.candidate_evidence import CandidateEvidence
+ from models.job_comparison import JobComparison
+ from models.skill import Skill
+ from routes.assessments import current_user_id, error
++from services.assessment_catalog import BANKS
+ from services.candidate_evidence import source_url, submission_id, text_field
+ from services.job_matching import build_comparison
+ from services.semantic_encoder import SemanticUnavailable, model_status
+@@ -39,17 +40,26 @@ def candidate_snapshot(user_id):
+     skills = db.session.execute(select(Skill).where(Skill.user_id == user_id).order_by(Skill.id)).scalars().all()
+     evidence = db.session.execute(select(CandidateEvidence).where(CandidateEvidence.user_id == user_id,
+                                   CandidateEvidence.archived.is_(False)).order_by(CandidateEvidence.id)).scalars().all()
+-    # Latest submitted attempt, not the best score. An all-skipped latest attempt stays unassessed.
+-    attempt = db.session.execute(select(AssessmentAttempt).where(AssessmentAttempt.user_id == user_id,
+-                                 AssessmentAttempt.skill_key == "sql", AssessmentAttempt.submitted_at.is_not(None))
+-                                 .order_by(AssessmentAttempt.submitted_at.desc(), AssessmentAttempt.id.desc()).limit(1)).scalar_one_or_none()
+-    assessed = None
+-    if attempt:
+-        assessed = {"attempt_id": attempt.id, "assessment_version": attempt.assessment_version,
+-                    "submitted_at": iso_utc(attempt.submitted_at), "result": deepcopy(attempt.result)}
+-    return {"captured_at": iso_utc(utc_now()),
++    # Latest submitted attempt for each supported skill, never the best score.
++    # An all-skipped latest attempt must not fall back to a previous high score.
++    assessments = {}
++    for skill_key in BANKS:
++        attempt = db.session.execute(select(AssessmentAttempt).where(
++            AssessmentAttempt.user_id == user_id, AssessmentAttempt.skill_key == skill_key,
++            AssessmentAttempt.submitted_at.is_not(None)
++        ).order_by(AssessmentAttempt.submitted_at.desc(), AssessmentAttempt.id.desc()).limit(1)).scalar_one_or_none()
++        if attempt:
++            assessments[skill_key] = {
++                "attempt_id": attempt.id, "skill_key": skill_key,
++                "assessment_version": attempt.assessment_version,
++                "title": attempt.question_snapshot["metadata"]["title"],
++                "review_status": attempt.question_snapshot["metadata"]["review_status"],
++                "submitted_at": iso_utc(attempt.submitted_at), "result": deepcopy(attempt.result),
++            }
++    return {"captured_at": iso_utc(utc_now()), "snapshot_version": "candidate-evidence-v2",
+             "skills": [{"id": skill.id, "skill_name": skill.skill_name, "proficiency": skill.proficiency} for skill in skills],
+-            "evidence": [item.to_dict() for item in evidence], "sql_assessment": assessed}
++            "evidence": [item.to_dict() for item in evidence], "assessments": assessments,
++            "sql_assessment": deepcopy(assessments.get("sql"))}
+ 
+ 
+ def existing_submission(user_id, key):
+diff --git a/backend/routes/roadmaps.py b/backend/routes/roadmaps.py
+index 9b104fa..9e2388e 100644
+--- a/backend/routes/roadmaps.py
++++ b/backend/routes/roadmaps.py
+@@ -10,6 +10,7 @@ from models.assessment_attempt import utc_now
+ from models.learning_roadmap import LearningRoadmap
+ from routes.assessments import current_user_id, error, owned_attempt
+ from services.learning_roadmap import build_roadmap
++from services.assessment_catalog import BANKS
+ 
+ 
+ roadmaps_bp = Blueprint("roadmaps", __name__, url_prefix="/api/roadmaps")
+@@ -39,13 +40,13 @@ def attempt_roadmap(attempt_id):
+         return {"status": "success", "roadmap": roadmap.to_dict()}, 200
+     if attempt.submitted_at is None or attempt.result is None:
+         return error("Submit the assessment before creating a learning roadmap.", 409)
+-    if attempt.skill_key != "sql":
++    if attempt.skill_key not in BANKS:
+         return error("A resource catalogue is not available for this assessment skill.", 409)
+     roadmap = LearningRoadmap(
+         attempt_id=attempt.id, user_id=user_id,
+         snapshot=build_roadmap(
+             attempt.result, attempt.assessment_version,
+-            attempt.question_snapshot["metadata"]["scoring_version"],
++            attempt.question_snapshot["metadata"]["scoring_version"], skill_key=attempt.skill_key,
+         ), progress={},
+     )
+     try:
+diff --git a/backend/services/assessment_catalog.py b/backend/services/assessment_catalog.py
+new file mode 100644
+index 0000000..09120e9
+--- /dev/null
++++ b/backend/services/assessment_catalog.py
+@@ -0,0 +1,134 @@
++"""Draft, versioned diagnostics. The original SQL bank remains unchanged.
++
++Questions are original project content, not copied from the linked learning
++resources. Six items sample foundations; they do not validate proficiency.
++"""
++
++from copy import deepcopy
++
++from services import sql_assessment
++from services.skill_catalog import BY_KEY
++
++
++def metadata(key, title, version):
++    return {
++        "skill_key": key, "title": title, "version": version,
++        "scoring_version": "equal-weight-with-skips-v1",
++        "review_status": "draft_pending_human_review",
++        "interpretation": (
++            "Results describe performance on these questions, not a validated "
++            f"{BY_KEY[key]['label']} proficiency level or a job-readiness score. "
++            "Skipped questions are unassessed."
++        ),
++    }
++
++
++PYTHON_QUESTIONS = [
++    {
++        "id": "python-functions-1", "topic": "functions",
++        "prompt": "A Python function reaches its end without executing a return statement. What value does the call return?",
++        "options": {"a": "0", "b": "None", "c": "An empty string", "d": "The last local variable"},
++        "correct_option_id": "b",
++        "explanation": "Falling off the end of a Python function returns None. Printing a value does not return it.",
++    },
++    {
++        "id": "python-functions-2", "topic": "functions",
++        "prompt": "What does this Python code print?\ndef total(price, quantity=2):\n    return price * quantity\nprint(total(4, quantity=3))",
++        "options": {"a": "12", "b": "8", "c": "7", "d": "It raises TypeError"},
++        "correct_option_id": "a",
++        "explanation": "The explicit quantity=3 overrides the default of 2; 4 multiplied by 3 is 12.",
++    },
++    {
++        "id": "python-collections-1", "topic": "collections",
++        "prompt": "What does this Python code print?\nvalues = [3, 5]\nalias = values\nalias.append(8)\nprint(len(values))",
++        "options": {"a": "2", "b": "8", "c": "1", "d": "3"},
++        "correct_option_id": "d",
++        "explanation": "Assignment makes alias refer to the same list. Appending through alias changes that list.",
++    },
++    {
++        "id": "python-collections-2", "topic": "collections",
++        "prompt": "What does this Python code print?\ncounts = {'ready': 2}\nprint(counts.get('waiting', 0))",
++        "options": {"a": "2", "b": "None", "c": "0", "d": "It raises KeyError"},
++        "correct_option_id": "c",
++        "explanation": "dict.get returns the supplied default when the key is absent, without adding the key.",
++    },
++    {
++        "id": "python-exceptions-1", "topic": "exceptions",
++        "prompt": "Which exception does int('pear') raise in Python?",
++        "options": {"a": "KeyError", "b": "ValueError", "c": "IndexError", "d": "It returns 0"},
++        "correct_option_id": "b",
++        "explanation": "The string has the right input type for int but does not represent an integer, so conversion raises ValueError.",
++    },
++    {
++        "id": "python-exceptions-2", "topic": "exceptions",
++        "prompt": "In normal Python execution, which block is used for cleanup whether the associated try block succeeds or raises an exception?",
++        "options": {"a": "else only", "b": "except ValueError only", "c": "A new unrelated try block", "d": "finally"},
++        "correct_option_id": "d",
++        "explanation": "A finally block runs as control leaves the try statement, including normal completion and exception propagation.",
++    },
++]
++
++REST_QUESTIONS = [
++    {
++        "id": "rest-methods-1", "topic": "http_methods",
++        "prompt": "An HTTP API provides /books/42. Which method is intended to retrieve the book representation without requesting a state change?",
++        "options": {"a": "GET", "b": "POST", "c": "DELETE", "d": "PATCH"},
++        "correct_option_id": "a",
++        "explanation": "GET requests a representation and is defined as safe; incidental effects such as server logging can still occur.",
++    },
++    {
++        "id": "rest-methods-2", "topic": "http_methods",
++        "prompt": "For an HTTP API that follows standard method semantics, what does it mean that PUT is idempotent?",
++        "options": {"a": "PUT cannot change server state", "b": "Every response must be identical", "c": "Repeating the identical request has the same intended server effect as sending it once", "d": "PUT never needs authentication"},
++        "correct_option_id": "c",
++        "explanation": "Idempotence concerns the intended effect on the server, not identical response codes, logs or authentication requirements.",
++    },
++    {
++        "id": "rest-status-1", "topic": "status_codes",
++        "prompt": "A POST request successfully creates a new resource. Which HTTP status specifically communicates that creation?",
++        "options": {"a": "404", "b": "201", "c": "204", "d": "500"},
++        "correct_option_id": "b",
++        "explanation": "201 Created reports successful creation. 204 means success without response content, not specifically creation.",
++    },
++    {
++        "id": "rest-status-2", "topic": "status_codes",
++        "prompt": "An API documents that authenticated callers receive 404 when a requested item does not exist. Which response should GET /items/999 return when that item is absent?",
++        "options": {"a": "500", "b": "201", "c": "301", "d": "404"},
++        "correct_option_id": "d",
++        "explanation": "Under the stated contract, 404 reports that the requested item was not found; its absence alone is not an internal server failure.",
++    },
++    {
++        "id": "rest-representations-1", "topic": "representations",
++        "prompt": "A client sends a JSON request body. Which request header declares the media type of that body?",
++        "options": {"a": "Content-Type: application/json", "b": "Accept: application/json", "c": "Location: application/json", "d": "Authorization: application/json"},
++        "correct_option_id": "a",
++        "explanation": "Content-Type describes the representation being sent. Accept states preferences for response media types.",
++    },
++    {
++        "id": "rest-representations-2", "topic": "representations",
++        "prompt": "A JSON-only API returns HTTP 204 No Content after a successful deletion. How should the client handle the response body?",
++        "options": {"a": "Require a JSON object with deleted=true", "b": "Parse an empty body as JSON null", "c": "Treat the request as successful without parsing a JSON body", "d": "Retry until a body appears"},
++        "correct_option_id": "c",
++        "explanation": "A 204 response has no content. Success does not require a JSON body, and parsing an empty body as JSON would fail.",
++    },
++]
++
++BANKS = {
++    "sql": {"metadata": sql_assessment.ASSESSMENT, "questions": sql_assessment.QUESTIONS},
++    "python": {"metadata": metadata("python", "Python foundations diagnostic", "python-foundations-v1"), "questions": PYTHON_QUESTIONS},
++    "rest_api": {"metadata": metadata("rest_api", "REST API HTTP foundations diagnostic", "rest-http-foundations-v1"), "questions": REST_QUESTIONS},
++}
++
++
++def new_snapshot(skill_key):
++    return deepcopy(BANKS[skill_key])
++
++
++def public_description(skill_key):
++    bank = BANKS[skill_key]
++    return {
++        **deepcopy(bank["metadata"]), "label": BY_KEY[skill_key]["label"],
++        "question_count": len(bank["questions"]),
++        "topics": list(dict.fromkeys(question["topic"] for question in bank["questions"])),
++        "claim_aliases": [BY_KEY[skill_key]["label"], *BY_KEY[skill_key]["aliases"]],
++    }
+diff --git a/backend/services/foundations_resources.py b/backend/services/foundations_resources.py
+new file mode 100644
+index 0000000..1cb848f
+--- /dev/null
++++ b/backend/services/foundations_resources.py
+@@ -0,0 +1,132 @@
++"""Python and HTTP learning catalogues, checked 2026-09-29.
++
++Tasks are original, ungraded project exercises. Links are curated, not generated
++or ranked by a trained recommendation model. Do not edit released versions.
++"""
++
++
++def resource(title, provider, url, focus, kind="reference"):
++    return {"title": title, "provider": provider, "url": url, "kind": kind,
++            "focus": focus, "checked_on": "2026-09-29"}
++
++
++def python_lesson(week, title, focus):
++    return resource(title, "Harvard CS50", f"https://cs50.harvard.edu/python/weeks/{week}/",
++                    focus, "course_lesson")
++
++
++def task(title, starter, instructions, self_check, language="Python"):
++    return {"title": title, "starter_code": starter, "language": language,
++            "instructions": instructions, "self_check": self_check,
++            "starter_guidance": "Use the starter in your own editor. Keep your solution and explanation for review."}
++
++
++PYTHON = {
++    "functions": {
++        "title": "Return values and use function parameters",
++        "objective": "Distinguish returning from printing and use default and keyword arguments.",
++        "resources": [
++            python_lesson(0, "CS50 Python: Functions, Variables", "Review parameters, return values and the difference between return and print."),
++            resource("Defining functions", "Python 3.13 documentation",
++                     "https://docs.python.org/3.13/tutorial/controlflow.html#defining-functions",
++                     "Review function definitions, default arguments and keyword arguments."),
++        ],
++        "task": task("Calculate an invoice total", "def invoice_total(unit_price, quantity=1):\n    # Return the total, without printing it.\n    pass",
++                     ["Implement invoice_total using its two arguments.",
++                      "Check invoice_total(7) and invoice_total(7, quantity=4).",
++                      "Explain why printing the total inside the function is different from returning it."],
++                     "The returned values should be 7 and 28. A print-only implementation would return None."),
++    },
++    "collections": {
++        "title": "Reason about lists and dictionary lookups",
++        "objective": "Trace shared list references and choose a default for a missing dictionary key.",
++        "resources": [
++            python_lesson(2, "CS50 Python: Loops", "Use the list and dictionary sections, then practise iterating over stored values."),
++            resource("Data structures", "Python 3.13 documentation",
++                     "https://docs.python.org/3.13/tutorial/datastructures.html",
++                     "Review list operations and dictionary access."),
++        ],
++        "task": task("Update a copy and count a missing category", "original = [2, 4]\ncopy = original.copy()\ncopy.append(6)\ncounts = {'open': 3}\n# Inspect both lists and look up 'closed' with a default of zero.",
++                     ["Print original and copy after the append.",
++                      "Retrieve counts['closed'] safely with dict.get and a default of zero.",
++                      "Repeat with copy = original and explain which list changes."],
++                     "With .copy(), original is [2, 4] and copy is [2, 4, 6]. The missing category returns 0. With assignment alone both names refer to the changed list."),
++    },
++    "exceptions": {
++        "title": "Handle a specific conversion error",
++        "objective": "Catch expected ValueError failures and explain cleanup in finally.",
++        "resources": [
++            python_lesson(3, "CS50 Python: Exceptions", "Review try, except and handling invalid integer input."),
++            resource("Errors and exceptions", "Python 3.13 documentation",
++                     "https://docs.python.org/3.13/tutorial/errors.html",
++                     "Review exception handling and the cleanup role of finally."),
++        ],
++        "task": task("Convert a submitted quantity", "def parse_quantity(text):\n    # Return int(text), or None when conversion raises ValueError.\n    pass",
++                     ["Implement the function using try and except ValueError.",
++                      "Try inputs '12' and 'pear'. Do not use a bare except.",
++                      "Temporarily add a finally block that prints 'finished' and explain when it runs."],
++                     "The return values are 12 and None. The finally message appears for both paths during normal execution."),
++    },
++}
++
++HTTP_OVERVIEW = resource(
++    "Client-server overview", "MDN Learn web development",
++    "https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Server-side/First_steps/Client-Server_overview",
++    "Follow the request and response examples in this guided lesson.", "guided_lesson",
++)
++API_LESSON = resource(
++    "CS50 Web: JavaScript — APIs section", "Harvard CS50",
++    "https://cs50.harvard.edu/web/notes/5/#apis",
++    "Study API requests and JSON responses. JavaScript familiarity helps; this is not a complete REST design course.", "course_lesson",
++)
++REST = {
++    "http_methods": {
++        "title": "Choose HTTP methods and reason about retries",
++        "objective": "Separate read requests from updates and explain the intended effect of repeated PUT requests.",
++        "resources": [HTTP_OVERVIEW, resource(
++            "HTTP request methods", "MDN",
++            "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods",
++            "Compare safe and idempotent methods. Responses to repeated requests need not be identical.",
++        )],
++        "task": task("Specify a book resource", "Resource: /books/42\nCurrent representation: {\"title\": \"First edition\"}",
++                     ["Write the method and path for reading the current representation.",
++                      "Specify a PUT request replacing it with a title of 'Second edition'.",
++                      "Explain the intended final state if that identical PUT request is sent twice."],
++                     "Read with GET /books/42. Under a replacement contract, PUT with the new representation leaves the title as 'Second edition' after one or two identical requests. This does not promise identical responses.", "HTTP design notes"),
++    },
++    "status_codes": {
++        "title": "Describe success, missing resources and empty responses",
++        "objective": "Use status codes to communicate outcomes rather than treating every response as JSON data.",
++        "resources": [HTTP_OVERVIEW, resource(
++            "HTTP response status codes", "MDN",
++            "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status",
++            "Read the definitions of 201, 204 and 404, including the absence of content in 204.",
++        )],
++        "task": task("Document three API outcomes", "POST /notes -> a new note is created\nGET /notes/999 -> the note does not exist\nDELETE /notes/42 -> deletion succeeds with no content",
++                     ["For this exercise, document 201 for creation, 404 for a missing note and 204 for deletion without content.",
++                      "Give an example JSON response for the new note and identify its resource URL.",
++                      "Explain why the deletion response must not require a JSON body."],
++                     "The stated contract yields 201, 404 and 204 respectively. A created note could have {\"id\": 43}; a Location header can identify /notes/43. A 204 response has no content.", "HTTP design notes"),
++    },
++    "representations": {
++        "title": "Handle JSON representations and their headers",
++        "objective": "Distinguish Content-Type from Accept and handle a successful response without content.",
++        "resources": [API_LESSON, resource(
++            "Overview of HTTP", "MDN",
++            "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview",
++            "Review the structure of requests, responses, headers and bodies.",
++        )],
++        "task": task("Write a JSON request and an empty-response rule", "POST /notes\n# Add request headers and a JSON body.\n\n# Describe client handling for a successful 204 response.",
++                     ["Declare a JSON request body using Content-Type and request a JSON response using Accept.",
++                      "Write a valid JSON object for a note with title 'Plan'.",
++                      "Describe a client rule that handles 204 before attempting JSON parsing."],
++                     "Use Content-Type: application/json and Accept: application/json with {\"title\": \"Plan\"}. For 204, record success without parsing a body; parse JSON only when the response contract and content support it.", "HTTP design notes"),
++    },
++}
++
++CATALOGS = {
++    "python": {"catalog": PYTHON, "version": "python-resources-2026-09-29-v1",
++               "ordering": "Functions, collections, then exceptions; topics with no flagged need are omitted."},
++    "rest_api": {"catalog": REST, "version": "rest-http-resources-2026-09-29-v1",
++                 "ordering": "HTTP methods, status codes, then representations; topics with no flagged need are omitted."},
++}
+diff --git a/backend/services/job_matching.py b/backend/services/job_matching.py
+index bae39db..cfce60e 100644
+--- a/backend/services/job_matching.py
++++ b/backend/services/job_matching.py
+@@ -165,15 +165,17 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
+             if relation["target"] == key:
+                 related.extend({**claim, "skill_label": BY_KEY[relation["source"]]["label"], "relation": relation["relation"]}
+                                for claim in support[relation["source"]])
+-        assessment = snapshot["sql_assessment"] if key == "sql" else None
++        assessment = snapshot.get("assessments", {}).get(key)
++        if assessment is None and key == "sql":
++            assessment = snapshot.get("sql_assessment")
+         if assessment and assessment["result"]["incorrect_count"]:
+-            guidance = "Review the SQL topic results and practise the topics answered incorrectly. This small diagnostic does not establish overall proficiency."
++            guidance = f"Review the {skill['label']} topic results and practise the topics answered incorrectly. This small diagnostic does not establish overall proficiency."
+         elif assessment and assessment["result"]["answered_count"] and assessment["result"]["unanswered_count"]:
+-            guidance = "The answered SQL questions were correct, but some questions remain unassessed. Collect fresh evidence for those topics."
++            guidance = f"The answered {skill['label']} questions were correct, but some questions remain unassessed. Collect fresh evidence for those topics."
+         elif assessment and assessment["result"]["answered_count"]:
+-            guidance = "All questions in this SQL attempt were answered correctly. That describes this small diagnostic; use fresh practical tasks for broader evidence."
++            guidance = f"All questions in this {skill['label']} attempt were answered correctly. That describes this small diagnostic; use fresh practical tasks for broader evidence."
+         elif assessment:
+-            guidance = "The SQL attempt was entirely skipped. This skill remains unassessed; collect more evidence."
++            guidance = f"The {skill['label']} attempt was entirely skipped. This skill remains unassessed; collect more evidence."
+         elif support[key]:
+             guidance = "A candidate claim is recorded. Collect an independent assessment or review before treating proficiency as established."
+         else:
+@@ -185,6 +187,7 @@ def build_comparison(description, snapshot, mode, encoder=None, max_fragments=60
+     direct_rows = [row for row in result_rows if row["mapping"] == "keyword"]
+     return {"policy_version": POLICY_VERSION, "extraction_version": EXTRACTION_VERSION,
+             "catalog_version": CATALOG_VERSION, "mode": mode,
++            "candidate_evidence_version": "latest-per-skill-v2",
+             "model": {"id": MODEL_ID, "revision": MODEL_REVISION, "runtime": "onnx-cpu", "pooling": "attention-mask-mean-l2", "max_tokens": 256} if mode == "semantic" else None,
+             "suggestion_policy": {"minimum_cosine": SIMILARITY_THRESHOLD, "minimum_margin": MARGIN_THRESHOLD,
+                                   "validation_status": "heuristic_not_calibrated"} if mode == "semantic" else None,
+diff --git a/backend/services/learning_roadmap.py b/backend/services/learning_roadmap.py
+index 0004b84..4ff1311 100644
+--- a/backend/services/learning_roadmap.py
++++ b/backend/services/learning_roadmap.py
+@@ -7,6 +7,8 @@ Saved roadmaps contain snapshots so later edits do not rewrite past recommendati
+ 
+ from copy import deepcopy
+ 
++from services.foundations_resources import CATALOGS
++
+ 
+ CATALOG_VERSION = "sql-resources-2026-09-26-v1"
+ POLICY_VERSION = "topic-evidence-rules-v1"
+@@ -115,11 +117,22 @@ CATALOG = {
+ }
+ 
+ 
+-def build_roadmap(result, assessment_version, scoring_version):
++def build_roadmap(result, assessment_version, scoring_version, skill_key="sql"):
+     """Derive suggestions from assessment evidence; never infer deficits from skips."""
++    if skill_key == "sql":
++        catalog, order, version = CATALOG, TOPIC_ORDER, CATALOG_VERSION
++        ordering = "Filtering, joins, then aggregation; topics with no flagged need are omitted."
++        evidence = "Keep your SQL queries, outputs and explanations for review. "
++    elif skill_key in CATALOGS:
++        config = CATALOGS[skill_key]
++        catalog, order, version = config["catalog"], tuple(config["catalog"]), config["version"]
++        ordering = config["ordering"]
++        evidence = "Keep your solutions, outputs and explanations for review. "
++    else:
++        raise ValueError("A resource catalogue is not available for this assessment skill.")
+     topics = {topic["topic"]: topic for topic in result["topics"]}
+     steps = []
+-    for name in TOPIC_ORDER:
++    for name in order:
+         topic = topics.get(name)
+         if topic is None:
+             continue
+@@ -127,13 +140,14 @@ def build_roadmap(result, assessment_version, scoring_version):
+         if not incorrect and not unanswered:
+             continue
+         kind = "practice" if incorrect else "collect_evidence"
++        topic_label = name.replace("_", " ")
+         if incorrect:
+-            reason = f"{incorrect} of {topic['answered_count']} answered questions in {name} were incorrect."
++            reason = f"{incorrect} of {topic['answered_count']} answered questions in {topic_label} were incorrect."
+             if unanswered:
+                 reason += f" {unanswered} question(s) also remain unassessed."
+         else:
+             reason = (
+-                f"{unanswered} question(s) in {name} remain unassessed. "
++                f"{unanswered} question(s) in {topic_label} remain unassessed. "
+                 "There is not enough evidence to infer a skill gap from those skips."
+             )
+         steps.append({
+@@ -147,25 +161,25 @@ def build_roadmap(result, assessment_version, scoring_version):
+             "source_counts": {key: topic[key] for key in (
+                 "question_count", "answered_count", "correct_count", "incorrect_count", "unanswered_count"
+             )},
+-            **deepcopy(CATALOG[name]),
++            **deepcopy(catalog[name]),
+         })
+     return {
+-        "catalog_version": CATALOG_VERSION, "policy_version": POLICY_VERSION,
++        "catalog_version": version, "policy_version": POLICY_VERSION,
+         "source_assessment_version": assessment_version,
+         "source_scoring_version": scoring_version,
+         "content_review_status": "draft_pending_human_review",
+-        "ordering": "Filtering, joins, then aggregation; topics with no flagged need are omitted.",
++        "ordering": ordering,
+         "summary": {key: result[key] for key in (
+             "question_count", "answered_count", "correct_count", "incorrect_count", "unanswered_count"
+         )},
+         "steps": steps,
+-        "unmapped_topics": sorted(set(topics) - set(CATALOG)),
++        "unmapped_topics": sorted(set(topics) - set(catalog)),
+         "progress_interpretation": (
+             "Completion records self-reported learning activity only. It does not verify "
+             "a skill, alter an assessment result, or establish a proficiency improvement."
+         ),
+         "next_evidence": (
+-            "Keep your SQL queries, outputs and explanations for review. "
++            evidence +
+             "Use new, independently reviewed tasks for reassessment; repeating the same "
+             "multiple-choice questions does not independently measure learning gains."
+         ),
+diff --git a/backend/static/jobs.js b/backend/static/jobs.js
+index 1600cce..e5a3963 100644
+--- a/backend/static/jobs.js
++++ b/backend/static/jobs.js
+@@ -42,7 +42,7 @@ function jobDetailMarkup() {
+   const mode = state.jobCompareDraft.mode;
+   return `<div class="page-intro"><button class="text-button" data-action="back-jobs">← Back to live jobs</button><p class="eyebrow">${escapeHtml(job.employer)} · Greenhouse job board</p><h1>${escapeHtml(job.title)}</h1><p class="muted">${escapeHtml(job.location || "Location not supplied")}</p></div>
+     <section class="panel job-detail-meta"><div class="button-row spread"><span class="badge ${!job.listed || job.stale ? "amber" : "neutral"}">${!job.listed ? "No longer listed on this board" : job.stale ? "Cached posting · Over 24h old" : "Listed at last fetch"}</span><a class="button secondary" href="${escapeHtml(job.source_url)}" target="_blank" rel="noopener noreferrer">Open employer posting ↗</a></div><p class="small muted">Last seen: ${fetchDate(job.last_seen_at)}<br>Last board check: ${fetchDate(job.last_checked_at)}<br>Provider updated: ${job.provider_updated_at ? fetchDate(job.provider_updated_at) : "Not supplied"} (not the publication date)</p>${board.last_error ? `<p class="error-text">Latest refresh failed. The text below is the saved posting from the last successful fetch.</p>` : ""}<p class="small muted">Availability and work-location eligibility must be checked on the employer page. This app does not submit an application.</p></section>
+-    <section class="panel job-compare"><h2>Compare with my evidence</h2><p class="muted">Save this posting’s full text with your current skill claims, active projects, certificates and latest SQL diagnostic. Unverified evidence stays labelled as a claim.</p><form id="job-compare-form"><label>Comparison method<select name="mode"><option value="semantic" ${mode === "semantic" ? "selected" : ""} ${ready ? "" : "disabled"}>Keywords + semantic suggestions</option><option value="keyword" ${mode === "keyword" ? "selected" : ""}>Keyword baseline</option></select></label><button class="button primary" type="submit" ${job.listed ? "" : "disabled"}>Compare with my evidence</button></form>${!ready ? '<p class="small muted">The semantic model is not ready on this server. Keyword comparison is available.</p>' : ""}${!job.listed ? '<p class="small muted">New comparisons are disabled for this removed posting. Earlier saved comparisons remain available.</p>' : ""}</section>
++    <section class="panel job-compare"><h2>Compare with my evidence</h2><p class="muted">Save this posting’s full text with your current skill claims, active projects, certificates and latest diagnostics for each supported skill. Unverified evidence stays labelled as a claim.</p><form id="job-compare-form"><label>Comparison method<select name="mode"><option value="semantic" ${mode === "semantic" ? "selected" : ""} ${ready ? "" : "disabled"}>Keywords + semantic suggestions</option><option value="keyword" ${mode === "keyword" ? "selected" : ""}>Keyword baseline</option></select></label><button class="button primary" type="submit" ${job.listed ? "" : "disabled"}>Compare with my evidence</button></form>${!ready ? '<p class="small muted">The semantic model is not ready on this server. Keyword comparison is available.</p>' : ""}${!job.listed ? '<p class="small muted">New comparisons are disabled for this removed posting. Earlier saved comparisons remain available.</p>' : ""}</section>
+     <section class="panel job-description"><h2>Job description</h2><pre class="match-source-text">${escapeHtml(job.description)}</pre><p class="section-note">Source: ${escapeHtml(job.employer)} via Greenhouse. Formatting has been converted to plain text. Posting version ${job.version}.</p></section>`;
+ }
+ 
+diff --git a/backend/static/matching.js b/backend/static/matching.js
+index e980339..4e7fd7f 100644
+--- a/backend/static/matching.js
++++ b/backend/static/matching.js
+@@ -39,7 +39,7 @@ function matchesMarkup() {
+   if (state.comparison && !state.matchDraft) return comparisonMarkup();
+   const draft = state.matchDraft || (state.matchDraft = freshMatchDraft());
+   const ready = state.matchMetadata.semantic_model.available;
+-  return `<div class="page-intro"><span class="eyebrow">Connect your experience to a role</span><h1>Compare a job</h1><p class="muted">Paste a job description to explore its skill requirements alongside your saved claims, projects, certificates and SQL assessment.</p></div>
++  return `<div class="page-intro"><span class="eyebrow">Connect your experience to a role</span><h1>Compare a job</h1><p class="muted">Paste a job description to explore its skill requirements alongside your saved claims, projects, certificates and assessments.</p></div>
+     <div class="match-editor-layout"><section class="panel"><form id="match-form"><label>Job title<input name="title" maxlength="160" value="${escapeHtml(draft.title)}" placeholder="Junior Python Backend Developer" required></label><label>Job description<textarea name="description" rows="10" minlength="20" maxlength="8000" aria-describedby="match-description-hint" placeholder="Paste the responsibilities and skill requirements here…" required>${escapeHtml(draft.description)}</textarea><span class="field-hint" id="match-description-hint">20–8,000 characters. Preserve headings such as Requirements and Preferred skills.</span></label><label>Source link (optional)<input name="source_url" type="url" maxlength="2048" value="${escapeHtml(draft.source_url)}" placeholder="https://company.example/careers/job"></label><label>Comparison method<select name="mode"><option value="semantic" ${draft.mode === "semantic" ? "selected" : ""} ${ready ? "" : "disabled"}>Keywords + semantic suggestions</option><option value="keyword" ${draft.mode === "keyword" ? "selected" : ""}>Keyword baseline</option></select></label>${ready ? '<p class="small muted">Semantic suggestions use a pretrained model running locally. Suggested links still need review.</p>' : '<p class="small muted">The semantic model is not ready on this server. Keyword comparison is available.</p>'}<div class="button-row evidence-form-actions"><button class="button primary" type="submit">Compare and save</button><button class="button secondary" type="button" data-action="demo-match">Use example description</button></div></form></section>
+     <aside class="panel evidence-guide"><span class="badge neutral">Research prototype</span><h2>What this comparison shows</h2><p>Named skills and possible semantic links are displayed separately. A missing record means we need more evidence.</p><p>Each comparison saves the job text and profile records it used. Later profile edits do not rewrite a saved comparison.</p><h3>Current vocabulary</h3><div class="topic-chips">${state.matchMetadata.skills.map((skill) => `<span>${escapeHtml(skill.label)}</span>`).join("")}</div><p class="section-note">This is a pasted description, not a live vacancy check. The example description is fictional.</p></aside></div>${matchHistoryMarkup()}`;
+ }
+@@ -58,7 +58,10 @@ function claimMarkup(claim, related = false) {
+ 
+ function comparisonSkillMarkup(row) {
+   const assessment = row.assessment;
+-  return `<article class="panel match-skill"><div class="button-row spread"><h2>${escapeHtml(row.label)}</h2><span class="badge ${row.mapping === "keyword" ? "neutral" : "amber"}">${row.mapping === "keyword" ? "Named in description" : "Semantic suggestion · Review"}</span></div><div class="match-skill-columns"><section><h3>Job text</h3>${row.job_sources.map((source) => `<blockquote class="match-quote">${escapeHtml(source.text)}<footer>${source.importance === "required" ? "Required wording" : source.importance === "optional" ? "Optional / preferred wording" : "Mentioned in description"} · ${source.method === "keyword" ? "Keyword / alias" : `Semantic suggestion · cosine ${Number(source.similarity).toFixed(3)}`}</footer></blockquote>`).join("")}</section><section><h3>Your saved evidence</h3>${row.candidate_claims.length ? `<ul class="match-claims">${row.candidate_claims.map((claim) => claimMarkup(claim)).join("")}</ul>` : '<p class="small muted">No direct skill claim recorded for this concept.</p>'}${row.related_claims.length ? `<details class="evidence-details"><summary>Related claims (${row.related_claims.length})</summary><p class="small muted">Related technologies are not treated as equivalent skills.</p><ul class="match-claims">${row.related_claims.map((claim) => claimMarkup(claim, true)).join("")}</ul></details>` : ""}${assessment ? `<div class="match-assessment"><span class="badge neutral">SQL diagnostic snapshot</span><p>${escapeHtml(percent(assessment.result.accuracy_on_answered_percent))} accuracy · ${assessment.result.answered_count}/${assessment.result.question_count} answered</p><ul>${assessment.result.topics.map((topic) => `<li>${escapeHtml(topic.topic)}: ${topic.correct_count} correct, ${topic.incorrect_count} incorrect, ${topic.unanswered_count} unassessed</li>`).join("")}</ul><button class="text-button" data-action="open-attempt" data-id="${escapeHtml(assessment.attempt_id)}">Open SQL result & roadmap →</button></div>` : '<p class="small muted">No assessment result recorded for this skill.</p>'}</section></div><p class="match-guidance">${escapeHtml(row.guidance)}</p></article>`;
++  const supported = state.assessmentCatalog.some(
++    (item) => item.skill_key === row.skill_key,
++  );
++  return `<article class="panel match-skill"><div class="button-row spread"><h2>${escapeHtml(row.label)}</h2><span class="badge ${row.mapping === "keyword" ? "neutral" : "amber"}">${row.mapping === "keyword" ? "Named in description" : "Semantic suggestion · Review"}</span></div><div class="match-skill-columns"><section><h3>Job text</h3>${row.job_sources.map((source) => `<blockquote class="match-quote">${escapeHtml(source.text)}<footer>${source.importance === "required" ? "Required wording" : source.importance === "optional" ? "Optional / preferred wording" : "Mentioned in description"} · ${source.method === "keyword" ? "Keyword / alias" : `Semantic suggestion · cosine ${Number(source.similarity).toFixed(3)}`}</footer></blockquote>`).join("")}</section><section><h3>Your saved evidence</h3>${row.candidate_claims.length ? `<ul class="match-claims">${row.candidate_claims.map((claim) => claimMarkup(claim)).join("")}</ul>` : '<p class="small muted">No direct skill claim recorded for this concept.</p>'}${row.related_claims.length ? `<details class="evidence-details"><summary>Related claims (${row.related_claims.length})</summary><p class="small muted">Related technologies are not treated as equivalent skills.</p><ul class="match-claims">${row.related_claims.map((claim) => claimMarkup(claim, true)).join("")}</ul></details>` : ""}${assessment ? `<div class="match-assessment"><span class="badge neutral">${escapeHtml(row.label)} diagnostic snapshot</span><p>${escapeHtml(percent(assessment.result.accuracy_on_answered_percent))} accuracy · ${assessment.result.answered_count}/${assessment.result.question_count} answered</p><ul>${assessment.result.topics.map((topic) => `<li>${escapeHtml(topicLabel(topic.topic))}: ${topic.correct_count} correct, ${topic.incorrect_count} incorrect, ${topic.unanswered_count} unassessed</li>`).join("")}</ul><button class="text-button" data-action="open-attempt" data-id="${escapeHtml(assessment.attempt_id)}">Open ${escapeHtml(row.label)} result & roadmap →</button></div>` : `<p class="small muted">No assessment result recorded for this skill.</p>${supported ? `<button class="button secondary" data-action="start" data-skill="${escapeHtml(row.skill_key)}">Assess ${escapeHtml(row.label)} →</button>` : '<p class="small muted">A diagnostic for this skill is not available yet.</p>'}`}</section></div><p class="match-guidance">${escapeHtml(row.guidance)}</p></article>`;
+ }
+ 
+ function comparisonMarkup() {
+@@ -71,6 +74,7 @@ function comparisonMarkup() {
+   return `<div class="page-intro result-heading"><div><span class="eyebrow">Saved job comparison</span><h1>${escapeHtml(saved.title)}</h1><p class="muted">${escapeHtml(dateLabel(saved.created_at))} · ${saved.mode === "semantic" ? "Keywords + semantic suggestions" : "Keyword baseline"}</p></div><button class="button secondary" data-action="new-match">New comparison</button></div>
+     <section class="panel match-summary"><div><strong>${summary.explicit_skill_mentions}</strong><span>Named skill concepts</span></div><div><strong>${summary.explicit_mentions_with_claims}</strong><span>Named concepts with your claims</span></div><div><strong>${summary.semantic_suggestions}</strong><span>Suggested concepts to review</span></div><div><strong>${summary.skills_with_assessment_records}</strong><span>Concepts with an assessment record</span></div></section>
+     <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>${escapeHtml(result.interpretation)}</p></div>
++    <section class="panel roadmap-entry"><div><h2>Added new assessment evidence?</h2><p class="muted">Save a new comparison using your latest records. This original snapshot stays unchanged.</p></div><button class="button secondary" data-action="repeat-comparison">Compare with latest evidence →</button></section>
+     <div class="section-label"><h2>Skills and supporting records</h2>${canCompare ? `<button class="text-button" data-action="compare-${otherMode}">Try ${otherMode === "keyword" ? "keyword baseline" : "semantic suggestions"}</button>` : ""}</div>
+     ${result.skills.length ? `<div class="match-skill-list">${result.skills.map(comparisonSkillMarkup).join("")}</div>` : '<div class="empty-state"><div><strong>No skill mappings found in this vocabulary</strong><p>The job may require skills outside the current scope. This does not mean you are unsuitable.</p></div></div>'}
+     ${result.manual_review.length ? `<section class="panel match-review"><h2>Read these passages manually</h2><p class="small muted">These passages need context before their skills can be treated as candidate requirements.</p>${result.manual_review.map((item) => `<blockquote class="match-quote">${escapeHtml(item.text)}<footer>${escapeHtml(item.reason || "Review this passage before using it as a requirement.")}</footer></blockquote>`).join("")}</section>` : ""}
+@@ -110,6 +114,10 @@ async function submitMatch(values) {
+ }
+ 
+ async function handleMatchAction(action, button) {
++  const requestedMode =
++    action === "repeat-comparison"
++      ? state.comparison.mode
++      : otherComparisonMode(action);
+   if (action === "matches" || action === "new-match") {
+     await loadMatches();
+     state.evidenceEditor = null;
+@@ -137,10 +145,7 @@ async function handleMatchAction(action, button) {
+     state.matchDirty = true;
+     return;
+   } else if (state.comparison.job.source_type === "greenhouse") {
+-    await openLiveJob(
+-      state.comparison.job.live_job_id,
+-      otherComparisonMode(action),
+-    );
++    await openLiveJob(state.comparison.job.live_job_id, requestedMode);
+     showNotice(
+       "Review the current cached posting before comparing. A new comparison uses your current profile records.",
+       true,
+@@ -149,7 +154,7 @@ async function handleMatchAction(action, button) {
+   } else {
+     state.matchDraft = freshMatchDraft({
+       ...state.comparison.job,
+-      mode: action === "compare-keyword" ? "keyword" : "semantic",
++      mode: requestedMode,
+     });
+     state.matchDirty = true;
+   }
+diff --git a/backend/static/workspace.css b/backend/static/workspace.css
+index 46f0073..e8e264c 100644
+--- a/backend/static/workspace.css
++++ b/backend/static/workspace.css
+@@ -1886,3 +1886,8 @@ dialog h2 {
+     white-space: nowrap;
+   }
+ }
++
++/* Assessment choice and readable multi-line code questions. */
++.assessment-picker { flex-wrap: wrap; margin-bottom: 24px; }
++#question-prompt { white-space: pre-wrap; overflow-wrap: anywhere; }
++.review-body strong { white-space: pre-wrap; }
+diff --git a/backend/static/workspace.js b/backend/static/workspace.js
+index 3e6aa1a..234e79f 100644
+--- a/backend/static/workspace.js
++++ b/backend/static/workspace.js
+@@ -11,6 +11,9 @@ const state = {
+   skills: [],
+   history: [],
+   metadata: null,
++  assessmentCatalog: [],
++  selectedSkill: "sql",
++  assessmentReturn: null,
+   attempt: null,
+   roadmap: null,
+   evidence: [],
+@@ -56,10 +59,17 @@ const dateLabel = (value) =>
+     dateStyle: "medium",
+     timeStyle: "short",
+   });
+-const sqlClaims = () =>
+-  state.skills.filter(
+-    (skill) => skill.skill_name.trim().toLowerCase() === "sql",
++const normaliseClaim = (value) =>
++  value.trim().toLowerCase().split(/\s+/).join(" ");
++const skillClaims = () => {
++  const aliases = state.metadata.claim_aliases.map(normaliseClaim);
++  return state.skills.filter((skill) =>
++    aliases.includes(normaliseClaim(skill.skill_name)),
+   );
++};
++const skillLabel = (key) =>
++  state.assessmentCatalog.find((item) => item.skill_key === key)?.label || key;
++const topicLabel = (value) => value.replaceAll("_", " ");
+ const brand = `<div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M7 24V8l18 16V8M7 8h7M18 24h7" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Career Navigator<small>ASSESS. REFLECT. GROW.</small></span></div>`;
+ 
+ function showNotice(message, success = false) {
+@@ -188,9 +198,9 @@ async function withBusy(button, action) {
+ function renderAuth(email = "") {
+   const registering = state.authMode === "register";
+   root.innerHTML = `<div class="auth-layout">
+-    <aside class="auth-story">${brand}<div><span class="eyebrow">Your next step starts with evidence</span><h1>Know where you are.<br>See what comes next.</h1><p class="intro">Explore your SQL knowledge, understand your results, and make your next practice session count.</p>
+-      <div class="story-steps"><div class="story-detail"><span class="step-number">01</span><div><strong>Bring your perspective</strong><p class="muted">Record how you currently rate your SQL skill.</p></div></div><div class="story-detail"><span class="step-number">02</span><div><strong>Put it into practice</strong><p class="muted">Answer six questions across three SQL topics.</p></div></div><div class="story-detail"><span class="step-number">03</span><div><strong>Explore the evidence</strong><p class="muted">Review feedback and areas that need more practice or assessment.</p></div></div></div>
+-    </div><p class="auth-footer">AI Career Navigator · Research prototype<br>Current module: SQL foundations diagnostic</p></aside>
++    <aside class="auth-story">${brand}<div><span class="eyebrow">Your next step starts with evidence</span><h1>Know where you are.<br>See what comes next.</h1><p class="intro">Explore your SQL, Python and HTTP API knowledge, understand your results, and make your next practice session count.</p>
++      <div class="story-steps"><div class="story-detail"><span class="step-number">01</span><div><strong>Bring your perspective</strong><p class="muted">Record how you currently rate a skill.</p></div></div><div class="story-detail"><span class="step-number">02</span><div><strong>Put it into practice</strong><p class="muted">Choose a skill and answer six foundation questions.</p></div></div><div class="story-detail"><span class="step-number">03</span><div><strong>Explore the evidence</strong><p class="muted">Review feedback and areas that need more practice or assessment.</p></div></div></div>
++    </div><p class="auth-footer">AI Career Navigator · Research prototype<br>SQL · Python · REST API HTTP foundations</p></aside>
+     <main class="auth-main" id="main-content"><div class="auth-card"><span class="badge neutral">Candidate workspace</span><h2>${registering ? "Create your account" : "Welcome back"}</h2><p class="muted">${registering ? "Start your assessment journey." : "Sign in to your assessment workspace."}</p>
+       <div class="tabs" aria-label="Account access"><button type="button" data-action="login-tab" class="${registering ? "" : "active"}" aria-pressed="${!registering}">Sign in</button><button type="button" data-action="register-tab" class="${registering ? "active" : ""}" aria-pressed="${registering}">Create account</button></div>
+       <form id="auth-form">${registering ? '<label>Full name<input name="name" type="text" autocomplete="name" maxlength="120" required></label>' : ""}<label>Email<input name="email" type="email" autocomplete="username" value="${escapeHtml(email)}" required></label><label>Password<input name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" ${registering ? 'minlength="8"' : ""} required></label>${registering ? '<p class="small muted">Use at least 8 characters.</p>' : ""}<button class="button primary" type="submit">${registering ? "Create account & continue" : "Sign in to workspace"} <span aria-hidden="true">→</span></button></form>
+@@ -202,7 +212,7 @@ function renderShell() {
+   const onEvidence = state.view === "evidence";
+   const onMatches = state.view === "matches";
+   const onJobs = state.view === "jobs";
+-  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence || onMatches || onJobs ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence && !onMatches && !onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button><button class="nav-button ${onMatches ? "active" : ""}" data-action="matches" ${onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">⌕</span>Compare a job</button><button class="nav-button ${onJobs ? "active" : ""}" data-action="jobs" ${onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◎</span>Live jobs</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>SQL foundations v1<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onJobs ? "Live jobs" : onMatches ? "Job comparison" : onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "SQL foundations"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
++  root.innerHTML = `<div class="workspace"><aside class="sidebar">${brand}<nav aria-label="Main navigation"><button class="nav-button ${onHistory || onEvidence || onMatches || onJobs ? "" : "active"}" data-action="overview" ${!onHistory && !onEvidence && !onMatches && !onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">▦</span>Overview</button><button class="nav-button ${onHistory ? "active" : ""}" data-action="history" ${onHistory ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◷</span>My assessments</button><button class="nav-button ${onEvidence ? "active" : ""}" data-action="evidence" ${onEvidence ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◇</span>My evidence</button><button class="nav-button ${onMatches ? "active" : ""}" data-action="matches" ${onMatches ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">⌕</span>Compare a job</button><button class="nav-button ${onJobs ? "active" : ""}" data-action="jobs" ${onJobs ? 'aria-current="page"' : ""}><span class="nav-symbol" aria-hidden="true">◎</span>Live jobs</button></nav><div class="sidebar-note"><span class="badge neutral">Research prototype</span><p>Three foundation diagnostics<br>Draft content awaiting human review.</p></div></aside><div><header class="topbar"><span class="breadcrumb">Workspace / ${onJobs ? "Live jobs" : onMatches ? "Job comparison" : onEvidence ? "My evidence" : onHistory ? "History" : state.view === "roadmap" ? "Learning roadmap" : "Assessments"}</span><div class="account"><span class="avatar" aria-hidden="true">${escapeHtml(state.user.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${escapeHtml(state.user.name)}</span><button class="text-button" data-action="logout">Sign out</button></div></header><main id="main-content" class="content" tabindex="-1"></main></div></div>`;
+   const main = document.querySelector("#main-content");
+   if (state.view === "quiz") main.innerHTML = quizMarkup();
+   else if (state.view === "results") main.innerHTML = resultsMarkup();
+@@ -224,7 +234,7 @@ function evidenceMarkup() {
+   );
+   return `<div class="page-intro"><span class="eyebrow">Experience behind your skills</span><h1>My evidence</h1><p class="muted">Bring together projects you contributed to and certificates you earned. Explain what each item shows and which skills you used.</p></div>
+     <section class="panel evidence-intro"><div><span class="badge neutral">Candidate-submitted · Unverified</span><h2>Your work, with context.</h2><p class="muted">A link gives someone a starting point for review. It does not verify ownership, certificate validity or skill proficiency.</p><div class="evidence-counts"><span><strong>${active.filter((item) => item.kind === "project").length}</strong> projects</span><span><strong>${active.filter((item) => item.kind === "certification").length}</strong> certifications</span></div></div><div class="evidence-add-actions"><button class="button primary" data-action="add-project">+ Add project</button><button class="button secondary" data-action="add-certification">+ Add certification</button></div></section>
+-    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>Skill tags are your claims. Your SQL assessment results and learning activity stay separate. These submissions do not change your score or roadmap.</p></div>
++    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>Skill tags are your claims. Your assessment results and learning activity stay separate. These submissions do not change your score or roadmap.</p></div>
+     <div class="section-label"><h2>${state.showArchived ? "Archived evidence" : "Submitted evidence"}</h2><button class="text-button" data-action="evidence-filter">${state.showArchived ? `Show active (${active.length})` : `Show archived (${archived})`}</button></div>
+     ${items.length ? `<div class="evidence-grid">${items.map(evidenceCardMarkup).join("")}</div>` : `<div class="empty-state"><span class="empty-icon" aria-hidden="true">◇</span><div><strong>${state.showArchived ? "No archived evidence" : "Add your first piece of evidence"}</strong><p>${state.showArchived ? "Archived items can be restored whenever you need them." : "Start with a project where you can describe your own contribution."}</p></div></div>`}`;
+ }
+@@ -303,13 +313,18 @@ async function saveEvidence(values) {
+ }
+ 
+ function overviewMarkup() {
+-  const claims = sqlClaims();
++  const meta = state.metadata;
++  const claims = skillClaims();
+   const pending = state.history.find(
+-    (attempt) => attempt.status === "in_progress",
++    (attempt) =>
++      attempt.skill_key === state.selectedSkill &&
++      attempt.status === "in_progress",
+   );
+-  return `<div class="page-intro"><span class="eyebrow">Your learning workspace</span><h1>Build a clearer picture of your skills.</h1><p class="muted">Start with SQL. Add your own perspective, take the diagnostic, and explore the evidence behind your next steps.</p></div><div class="overview-grid"><section class="panel assessment-card"><div class="button-row spread"><span class="badge">Available assessment</span><span class="small muted">Foundations · v1</span></div><h2>SQL foundations</h2><p class="muted">A short diagnostic covering how you filter, connect, and summarise data.</p><div class="topic-chips"><span>Filtering</span><span>Joins</span><span>Aggregation</span></div><div class="assessment-meta"><div><strong>${escapeHtml(state.metadata.question_count)}</strong><span>Questions</span></div><div><strong>3</strong><span>Topics</span></div><div><strong>Untimed</strong><span>Go at your pace</span></div></div><button class="button primary" data-action="${pending ? "open-attempt" : "start"}" ${pending ? `data-id="${escapeHtml(pending.id)}"` : ""}>${pending ? "Continue assessment" : "Start SQL assessment"} <span aria-hidden="true">→</span></button><p class="section-note">You may skip a question. It will remain unassessed.</p></section>
+-    <section class="panel claim-panel"><span class="eyebrow">Your perspective</span><h2>Self-reported SQL skill</h2>${claims.length ? (claims.length === 1 ? `<div class="claim-value">${escapeHtml(claims[0].proficiency)}<small> / 10</small></div>` : `<ul class="claim-list">${claims.map((claim) => `<li>${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10</li>`).join("")}</ul>`) + '<p class="muted">This is your own rating. Assessment evidence is recorded separately.</p>' : '<p class="muted">Optional: how would you rate your current SQL skill?</p><form id="claim-form"><label>Rating from 1 to 10<input type="number" name="proficiency" min="1" max="10" step="1" placeholder="1–10" required></label><button class="button secondary" type="submit">Save my rating</button></form><p class="section-note">This is a self-report, not a verified score.</p>'}</section></div>
+-    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>The question bank is a draft awaiting human review. Your result describes performance on this small set of questions, not overall SQL proficiency or job readiness.</p></div><section class="history-section"><div class="section-label"><h2>Recent assessments</h2><button class="text-button" data-action="history">View history <span aria-hidden="true">→</span></button></div>${historyMarkup(state.history.slice(0, 3))}</section>`;
++  return `<div class="page-intro"><span class="eyebrow">Your learning workspace</span><h1>Build a clearer picture of your skills.</h1><p class="muted">Choose a skill, add your perspective, and use assessment evidence to plan your next steps.</p></div>
++    <div class="tabs assessment-picker" role="group" aria-label="Choose assessment skill">${state.assessmentCatalog.map((item) => `<button type="button" data-action="select-assessment" data-skill="${escapeHtml(item.skill_key)}" class="${state.selectedSkill === item.skill_key ? "active" : ""}" aria-pressed="${state.selectedSkill === item.skill_key}">${escapeHtml(item.label)}</button>`).join("")}</div>
++    <div class="overview-grid"><section class="panel assessment-card"><div class="button-row spread"><span class="badge">Available assessment</span><span class="small muted">Foundations · v1</span></div><h2>${escapeHtml(meta.title)}</h2><p class="muted">A short diagnostic sampling the topics below. Use it to identify what to practise or assess next.</p><div class="topic-chips">${meta.topics.map((topic) => `<span>${escapeHtml(topicLabel(topic))}</span>`).join("")}</div><div class="assessment-meta"><div><strong>${meta.question_count}</strong><span>Questions</span></div><div><strong>${meta.topics.length}</strong><span>Topics</span></div><div><strong>Untimed</strong><span>Go at your pace</span></div></div><button class="button primary" data-action="${pending ? "open-attempt" : "start"}" data-skill="${escapeHtml(meta.skill_key)}" ${pending ? `data-id="${escapeHtml(pending.id)}"` : ""}>${pending ? "Continue assessment" : `Start ${escapeHtml(meta.label)} assessment`} <span aria-hidden="true">→</span></button><p class="section-note">You may skip a question. It will remain unassessed.</p></section>
++    <section class="panel claim-panel"><span class="eyebrow">Your perspective</span><h2>Self-reported ${escapeHtml(meta.label)} skill</h2>${claims.length ? (claims.length === 1 ? `<div class="claim-value">${escapeHtml(claims[0].proficiency)}<small> / 10</small></div>` : `<ul class="claim-list">${claims.map((claim) => `<li>${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10</li>`).join("")}</ul>`) + '<p class="muted">This is your own rating. Assessment evidence is recorded separately.</p>' : '<p class="muted">Optional: how would you rate your current skill?</p><form id="claim-form"><label>Rating from 1 to 10<input type="number" name="proficiency" min="1" max="10" step="1" placeholder="1–10" required></label><button class="button secondary" type="submit">Save my rating</button></form><p class="section-note">This is a self-report, not a verified score.</p>'}</section></div>
++    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>The question banks await human review. Results describe these questions, not overall proficiency or job readiness. The REST API diagnostic samples HTTP foundations only.</p></div><section class="history-section"><div class="section-label"><h2>Recent assessments</h2><button class="text-button" data-action="history">View history →</button></div>${historyMarkup(state.history.slice(0, 3))}</section>`;
+ }
+ 
+ function historyMarkup(attempts) {
+@@ -318,7 +333,7 @@ function historyMarkup(attempts) {
+   return `<div class="history-list">${attempts
+     .map((attempt) => {
+       const done = attempt.status === "submitted";
+-      return `<article class="history-row"><div><h3>SQL foundations <span class="badge ${done ? "green" : "neutral"}">${done ? "Submitted" : "In progress"}</span></h3><p>${escapeHtml(dateLabel(attempt.submitted_at || attempt.created_at))}</p></div><div class="history-right">${done ? `<div class="history-score">${escapeHtml(percent(attempt.result.accuracy_on_answered_percent))}<small>${attempt.result.answered_count}/${attempt.result.question_count} answered</small></div>` : '<span class="small muted">Not submitted</span>'}<button class="button secondary" data-action="open-attempt" data-id="${escapeHtml(attempt.id)}">${done ? "View result" : "Continue"}</button></div></article>`;
++      return `<article class="history-row"><div><h3>${escapeHtml(attempt.assessment.title)} <span class="badge ${done ? "green" : "neutral"}">${done ? "Submitted" : "In progress"}</span></h3><p>${escapeHtml(dateLabel(attempt.submitted_at || attempt.created_at))}</p></div><div class="history-right">${done ? `<div class="history-score">${escapeHtml(percent(attempt.result.accuracy_on_answered_percent))}<small>${attempt.result.answered_count}/${attempt.result.question_count} answered</small></div>` : '<span class="small muted">Not submitted</span>'}<button class="button secondary" data-action="open-attempt" data-id="${escapeHtml(attempt.id)}">${done ? "View result" : "Continue"}</button></div></article>`;
+     })
+     .join("")}</div>`;
+ }
+@@ -334,7 +349,7 @@ function quizMarkup() {
+   const question = questions[state.index];
+   const answers = answersFor(attempt);
+   const count = questions.filter((item) => answers[item.id]).length;
+-  return `<div class="page-intro"><span class="eyebrow">SQL foundations diagnostic</span><h1>One question. One piece of evidence.</h1><p class="muted">Choose the best answer, or leave a question unassessed. You can revisit any question before submitting.</p></div><div class="quiz-grid"><section class="panel question-panel"><div class="question-top"><span class="badge">${escapeHtml(question.topic)}</span><span class="question-count">Question ${state.index + 1} of ${questions.length}</span></div><fieldset><legend id="question-prompt">${escapeHtml(question.prompt)}</legend>${Object.entries(
++  return `<div class="page-intro"><span class="eyebrow">${escapeHtml(attempt.assessment.title)}</span><h1>One question. One piece of evidence.</h1><p class="muted">Choose the best answer, or leave a question unassessed. You can revisit any question before submitting.</p></div><div class="quiz-grid"><section class="panel question-panel"><div class="question-top"><span class="badge">${escapeHtml(topicLabel(question.topic))}</span><span class="question-count">Question ${state.index + 1} of ${questions.length}</span></div><fieldset><legend id="question-prompt">${escapeHtml(question.prompt)}</legend>${Object.entries(
+     question.options,
+   )
+     .map(
+@@ -380,9 +395,9 @@ function resultsMarkup() {
+   const suggested = result.topics.filter(
+     (topic) => topic.practice_suggested || topic.additional_evidence_needed,
+   );
+-  return `<div class="page-intro result-heading"><div><span class="badge green">Result saved</span><h1>Your SQL assessment evidence</h1><p class="muted">${escapeHtml(dateLabel(attempt.submitted_at))} · SQL foundations</p></div><button class="button secondary" data-action="history">View history</button></div><div class="metrics"><div class="metric primary-metric"><span class="metric-label">Accuracy on answered questions</span><strong>${escapeHtml(percent(result.accuracy_on_answered_percent))}</strong><small>${result.correct_count} correct out of ${result.answered_count} answered</small></div><div class="metric"><span class="metric-label">Assessment coverage</span><strong>${escapeHtml(percent(result.coverage_percent))}</strong><small>${result.answered_count} of ${result.question_count} questions answered</small></div><div class="metric"><span class="metric-label">Incorrect answers</span><strong>${result.incorrect_count}</strong><small>Evidence to guide further practice</small></div><div class="metric"><span class="metric-label">Unassessed questions</span><strong>${result.unanswered_count}</strong><small>Skipped questions need more evidence</small></div></div>
+-    <div class="result-grid"><section class="panel"><div class="section-label"><h2>Evidence by topic</h2><span class="small muted">${result.topics.length} topics</span></div>${result.topics.map((topic) => `<div class="topic-row"><div class="topic-title"><h3>${escapeHtml(topic.topic)}</h3><div>${topicStatus(topic)}</div></div><p>${topic.correct_count} correct · ${topic.incorrect_count} incorrect · ${topic.unanswered_count} unassessed</p></div>`).join("")}</section><aside class="panel"><span class="eyebrow">Make your next step count</span><h2>Where to focus</h2>${suggested.length ? suggested.map((topic) => `<div class="next-action"><strong>${escapeHtml(topic.topic)}</strong><p>${topic.practice_suggested ? "Review the explanations and practise the concepts you missed." : "Answer fresh questions to collect evidence for this topic."}${topic.additional_evidence_needed && topic.practice_suggested ? " Some questions also remain unassessed." : ""}</p></div>`).join("") : '<p class="muted small">You answered this question set correctly. A fresh practical task would provide additional evidence.</p>'}<div class="snapshot"><strong>Self-report when this attempt started</strong><p class="muted">${attempt.self_reported_claims.length ? attempt.self_reported_claims.map((claim) => `${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10`).join(" · ") : "No SQL self-rating recorded."}</p><p class="muted">Self-report and assessment results are separate evidence.</p></div></aside></div>
+-    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>${escapeHtml(attempt.assessment.interpretation)}</p></div>${roadmapEntryMarkup()}<section class="review-list"><div class="section-label"><h2>Review your answers</h2><span class="small muted">Open a question for feedback</span></div>${result.feedback
++  return `<div class="page-intro result-heading"><div><span class="badge green">Result saved</span><h1>Your ${escapeHtml(skillLabel(attempt.skill_key))} assessment evidence</h1><p class="muted">${escapeHtml(dateLabel(attempt.submitted_at))} · ${escapeHtml(attempt.assessment.title)}</p></div><button class="button secondary" data-action="history">View history</button></div><div class="metrics"><div class="metric primary-metric"><span class="metric-label">Accuracy on answered questions</span><strong>${escapeHtml(percent(result.accuracy_on_answered_percent))}</strong><small>${result.correct_count} correct out of ${result.answered_count} answered</small></div><div class="metric"><span class="metric-label">Assessment coverage</span><strong>${escapeHtml(percent(result.coverage_percent))}</strong><small>${result.answered_count} of ${result.question_count} questions answered</small></div><div class="metric"><span class="metric-label">Incorrect answers</span><strong>${result.incorrect_count}</strong><small>Evidence to guide further practice</small></div><div class="metric"><span class="metric-label">Unassessed questions</span><strong>${result.unanswered_count}</strong><small>Skipped questions need more evidence</small></div></div>
++    <div class="result-grid"><section class="panel"><div class="section-label"><h2>Evidence by topic</h2><span class="small muted">${result.topics.length} topics</span></div>${result.topics.map((topic) => `<div class="topic-row"><div class="topic-title"><h3>${escapeHtml(topicLabel(topic.topic))}</h3><div>${topicStatus(topic)}</div></div><p>${topic.correct_count} correct · ${topic.incorrect_count} incorrect · ${topic.unanswered_count} unassessed</p></div>`).join("")}</section><aside class="panel"><span class="eyebrow">Make your next step count</span><h2>Where to focus</h2>${suggested.length ? suggested.map((topic) => `<div class="next-action"><strong>${escapeHtml(topicLabel(topic.topic))}</strong><p>${topic.practice_suggested ? "Review the explanations and practise the concepts you missed." : "Answer fresh questions to collect evidence for this topic."}${topic.additional_evidence_needed && topic.practice_suggested ? " Some questions also remain unassessed." : ""}</p></div>`).join("") : '<p class="muted small">You answered this question set correctly. A fresh practical task would provide additional evidence.</p>'}<div class="snapshot"><strong>Self-report when this attempt started</strong><p class="muted">${attempt.self_reported_claims.length ? attempt.self_reported_claims.map((claim) => `${escapeHtml(claim.skill_name)}: ${escapeHtml(claim.proficiency)}/10`).join(" · ") : "No self-rating recorded for this skill."}</p><p class="muted">Self-report and assessment results are separate evidence.</p></div></aside></div>
++    <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>${escapeHtml(attempt.assessment.interpretation)}</p></div>${assessmentReturnMarkup()}${roadmapEntryMarkup()}<section class="review-list"><div class="section-label"><h2>Review your answers</h2><span class="small muted">Open a question for feedback</span></div>${result.feedback
+       .map((feedback, index) => {
+         const question = attempt.questions.find(
+           (item) => item.id === feedback.question_id,
+@@ -395,7 +410,7 @@ function resultsMarkup() {
+               ? "Incorrect"
+               : "Unassessed";
+         const chosen = feedback.selected_option_id;
+-        return `<details class="review-item"><summary>Question ${index + 1} · ${escapeHtml(question.topic)} <span class="badge ${outcome === "correct" ? "green" : outcome === "incorrect" ? "red" : "neutral"}">${label}</span></summary><div class="review-body"><p><strong>${escapeHtml(question.prompt)}</strong></p><p>Your answer: ${chosen === null ? "Skipped — unassessed" : `${escapeHtml(chosen.toUpperCase())}. ${escapeHtml(question.options[chosen])}`}</p><p>Correct answer: ${escapeHtml(feedback.correct_option_id.toUpperCase())}. ${escapeHtml(question.options[feedback.correct_option_id])}</p><p class="muted">${escapeHtml(feedback.explanation)}</p></div></details>`;
++        return `<details class="review-item"><summary>Question ${index + 1} · ${escapeHtml(topicLabel(question.topic))} <span class="badge ${outcome === "correct" ? "green" : outcome === "incorrect" ? "red" : "neutral"}">${label}</span></summary><div class="review-body"><p><strong>${escapeHtml(question.prompt)}</strong></p><p>Your answer: ${chosen === null ? "Skipped — unassessed" : `${escapeHtml(chosen.toUpperCase())}. ${escapeHtml(question.options[chosen])}`}</p><p>Correct answer: ${escapeHtml(feedback.correct_option_id.toUpperCase())}. ${escapeHtml(question.options[feedback.correct_option_id])}</p><p class="muted">${escapeHtml(feedback.explanation)}</p></div></details>`;
+       })
+       .join(
+         "",
+@@ -412,19 +427,26 @@ function resourceMarkup(resource) {
+     const url = new URL(resource.url);
+     allowed =
+       url.protocol === "https:" &&
+-      ["cs50.harvard.edu", "www.postgresql.org"].includes(url.hostname);
++      !url.username &&
++      !url.password &&
++      [
++        "cs50.harvard.edu",
++        "www.postgresql.org",
++        "docs.python.org",
++        "developer.mozilla.org",
++      ].includes(url.hostname);
+   } catch {
+     /* Show the title without a link if a saved URL is invalid. */
+   }
+-  return `<li class="roadmap-resource"><span class="resource-kind">${resource.kind === "course_lesson" ? "Course lesson" : "Reference"} · ${escapeHtml(resource.provider)}</span>${allowed ? `<a href="${escapeHtml(resource.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(resource.title)} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>` : `<strong>${escapeHtml(resource.title)} — link unavailable</strong>`}<p>${escapeHtml(resource.focus)}</p><span class="resource-date">Link checked ${escapeHtml(resource.checked_on)}</span></li>`;
++  return `<li class="roadmap-resource"><span class="resource-kind">${resource.kind === "course_lesson" ? "Course lesson" : resource.kind === "guided_lesson" ? "Guided lesson" : "Reference"} · ${escapeHtml(resource.provider)}</span>${allowed ? `<a href="${escapeHtml(resource.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(resource.title)} <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>` : `<strong>${escapeHtml(resource.title)} — link unavailable</strong>`}<p>${escapeHtml(resource.focus)}</p><span class="resource-date">Link checked ${escapeHtml(resource.checked_on)}</span></li>`;
+ }
+ 
+ function roadmapMarkup() {
+   const roadmap = state.roadmap;
+   const snapshot = roadmap.snapshot;
+   const unmapped = snapshot.unmapped_topics.length > 0;
+-  return `<div class="page-intro result-heading"><div><span class="eyebrow">From evidence to action</span><h1>Your SQL learning roadmap</h1><p class="muted">Based on your assessment from ${escapeHtml(dateLabel(state.attempt.submitted_at))}. Follow the steps that fit the evidence from this attempt.</p></div><button class="button secondary" data-action="back-to-result">Back to result</button></div>
+-    <section class="panel roadmap-summary"><div><span class="badge">Saved learning plan</span><h2>${roadmap.step_count} ${roadmap.step_count === 1 ? "focused step" : "focused steps"}</h2><p class="muted">${roadmap.step_count ? "Work through the suggested order. Your progress is saved to this account." : "Your plan reflects this assessment only; broader SQL skills need additional evidence."}</p></div>${roadmap.step_count ? `<div class="roadmap-progress"><strong id="roadmap-progress-label">${roadmap.completed_count} of ${roadmap.step_count} practice activities marked complete</strong><progress id="roadmap-progress" value="${roadmap.completed_count}" max="${roadmap.step_count}" aria-labelledby="roadmap-progress-label"></progress><p class="muted">Self-reported activity. Your assessment score stays unchanged.</p></div>` : ""}</section>
++  return `<div class="page-intro result-heading"><div><span class="eyebrow">From evidence to action</span><h1>Your ${escapeHtml(skillLabel(state.attempt.skill_key))} learning roadmap</h1><p class="muted">Based on your assessment from ${escapeHtml(dateLabel(state.attempt.submitted_at))}. Follow the steps that fit the evidence from this attempt.</p></div><button class="button secondary" data-action="back-to-result">Back to result</button></div>
++    <section class="panel roadmap-summary"><div><span class="badge">Saved learning plan</span><h2>${roadmap.step_count} ${roadmap.step_count === 1 ? "focused step" : "focused steps"}</h2><p class="muted">${roadmap.step_count ? "Work through the suggested order. Your progress is saved to this account." : "Your plan reflects this assessment only; broader skills need additional evidence."}</p></div>${roadmap.step_count ? `<div class="roadmap-progress"><strong id="roadmap-progress-label">${roadmap.completed_count} of ${roadmap.step_count} practice activities marked complete</strong><progress id="roadmap-progress" value="${roadmap.completed_count}" max="${roadmap.step_count}" aria-labelledby="roadmap-progress-label"></progress><p class="muted">Self-reported activity. Your assessment score stays unchanged.</p></div>` : ""}</section>
+     <div class="info-line"><span class="info-icon" aria-hidden="true">i</span><p>Wrong answers can suggest practice. Unanswered questions call for more evidence; resources for those topics are optional support.</p></div>
+     ${unmapped ? `<div class="info-line"><p>Resource mapping is not yet available for: ${snapshot.unmapped_topics.map(escapeHtml).join(", ")}. These topics need separate review.</p></div>` : ""}
+     <div class="roadmap-steps">${
+@@ -433,12 +455,28 @@ function roadmapMarkup() {
+             .map((step) => {
+               const done =
+                 roadmap.self_reported_progress[step.id]?.completed === true;
+-              return `<article class="panel roadmap-step" data-step="${escapeHtml(step.id)}"><div class="roadmap-step-heading"><span class="roadmap-step-number">${step.position}</span><div><span class="eyebrow">${escapeHtml(step.topic)}</span><h2>${escapeHtml(step.title)}</h2></div><span class="badge ${step.kind === "practice" ? "amber" : "neutral"}">${step.kind === "practice" ? "Practice suggested" : "More evidence needed"}</span></div><p class="roadmap-reason"><strong>Why this step:</strong> ${escapeHtml(step.reason)}</p><p class="muted small">${escapeHtml(step.objective)}</p><div class="roadmap-columns"><section><h3>Learning resources</h3><p class="small muted">${escapeHtml(step.resource_guidance)}</p><ul class="roadmap-resource-list">${step.resources.map(resourceMarkup).join("")}</ul></section><section class="roadmap-practice"><span class="badge neutral">Original practice task</span><h3>${escapeHtml(step.task.title)}</h3><ol>${step.task.instructions.map((instruction) => `<li>${escapeHtml(instruction)}</li>`).join("")}</ol><details><summary>Show practice data (SQL)</summary><p class="small muted">Use this starter in your SQL editor and add your query. It uses temporary query data and does not create tables.</p><pre><code>${escapeHtml(step.task.starter_sql)}</code></pre></details><details><summary>Self-check after trying</summary><p>${escapeHtml(step.task.self_check)}</p><p class="muted small">Keep your query, output and explanation for review. This task is not automatically graded.</p></details></section></div><div class="roadmap-activity"><div><span class="badge ${done ? "green" : "neutral"} roadmap-activity-status">${done ? "Marked complete · self-reported" : "Not marked complete"}</span><p class="small muted">Mark this only after attempting the task. This records activity, not verified skill.</p></div><button class="button secondary roadmap-toggle" data-action="roadmap-progress" data-step="${escapeHtml(step.id)}" aria-label="Mark ${escapeHtml(step.topic)} practice ${done ? "as not done" : "complete"}">${done ? "Mark as not done" : "Mark practice complete"}</button></div></article>`;
++              return `<article class="panel roadmap-step" data-step="${escapeHtml(step.id)}"><div class="roadmap-step-heading"><span class="roadmap-step-number">${step.position}</span><div><span class="eyebrow">${escapeHtml(topicLabel(step.topic))}</span><h2>${escapeHtml(step.title)}</h2></div><span class="badge ${step.kind === "practice" ? "amber" : "neutral"}">${step.kind === "practice" ? "Practice suggested" : "More evidence needed"}</span></div><p class="roadmap-reason"><strong>Why this step:</strong> ${escapeHtml(step.reason)}</p><p class="muted small">${escapeHtml(step.objective)}</p><div class="roadmap-columns"><section><h3>Learning resources</h3><p class="small muted">${escapeHtml(step.resource_guidance)}</p><ul class="roadmap-resource-list">${step.resources.map(resourceMarkup).join("")}</ul></section><section class="roadmap-practice"><span class="badge neutral">Original practice task</span><h3>${escapeHtml(step.task.title)}</h3><ol>${step.task.instructions.map((instruction) => `<li>${escapeHtml(instruction)}</li>`).join("")}</ol>${practiceStarterMarkup(step.task)}<details><summary>Self-check after trying</summary><p>${escapeHtml(step.task.self_check)}</p><p class="muted small">Keep your solution, output and explanation for review. This task is not automatically graded.</p></details></section></div><div class="roadmap-activity"><div><span class="badge ${done ? "green" : "neutral"} roadmap-activity-status">${done ? "Marked complete · self-reported" : "Not marked complete"}</span><p class="small muted">Mark this only after attempting the task. This records activity, not verified skill.</p></div><button class="button secondary roadmap-toggle" data-action="roadmap-progress" data-step="${escapeHtml(step.id)}" aria-label="Mark ${escapeHtml(topicLabel(step.topic))} practice ${done ? "as not done" : "complete"}">${done ? "Mark as not done" : "Mark practice complete"}</button></div></article>`;
+             })
+             .join("")
+         : `<section class="panel"><h2>${unmapped ? "No mapped steps are available" : "No targeted practice suggested by this attempt"}</h2><p class="muted">${unmapped ? "Review the unmapped topics before drawing a conclusion." : "You answered the assessed topics correctly. A fresh practical evaluation would provide evidence beyond these multiple-choice questions."}</p></section>`
+     }</div>
+-    <section class="panel roadmap-next"><span class="eyebrow">After practising</span><h2>Gather fresh evidence</h2><p class="muted">${escapeHtml(snapshot.next_evidence)}</p><p class="small muted">${escapeHtml(snapshot.progress_interpretation)}</p></section><details class="roadmap-method"><summary>How this roadmap was chosen</summary><p>Suggestions follow topic rules applied to this saved assessment. They are a baseline for the research project, not a trained recommendation model.</p><p>${escapeHtml(snapshot.ordering)} Tasks await human review. Link checks confirm resource availability and topic relevance, not learning effectiveness.</p><p class="small">Created ${escapeHtml(dateLabel(roadmap.created_at))}<br>Policy: ${escapeHtml(snapshot.policy_version)} · Catalogue: ${escapeHtml(snapshot.catalog_version)}<br>Assessment: ${escapeHtml(snapshot.source_assessment_version)}</p></details>`;
++    ${assessmentReturnMarkup()}<section class="panel roadmap-next"><span class="eyebrow">After practising</span><h2>Gather fresh evidence</h2><p class="muted">${escapeHtml(snapshot.next_evidence)}</p><p class="small muted">${escapeHtml(snapshot.progress_interpretation)}</p></section><details class="roadmap-method"><summary>How this roadmap was chosen</summary><p>Suggestions follow topic rules applied to this saved assessment. They are a baseline for the research project, not a trained recommendation model.</p><p>${escapeHtml(snapshot.ordering)} Tasks await human review. Link checks confirm resource availability and topic relevance, not learning effectiveness.</p><p class="small">Created ${escapeHtml(dateLabel(roadmap.created_at))}<br>Policy: ${escapeHtml(snapshot.policy_version)} · Catalogue: ${escapeHtml(snapshot.catalog_version)}<br>Assessment: ${escapeHtml(snapshot.source_assessment_version)}</p></details>`;
++}
++
++function practiceStarterMarkup(task) {
++  const legacySQL = typeof task.starter_sql === "string";
++  const code = legacySQL ? task.starter_sql : task.starter_code;
++  if (typeof code !== "string") return "";
++  const language = legacySQL ? "SQL" : task.language;
++  const guidance = legacySQL
++    ? "Use this starter in your SQL editor and add your query. It uses temporary query data and does not create tables."
++    : task.starter_guidance;
++  return `<details><summary>Show practice starter (${escapeHtml(language)})</summary><p class="small muted">${escapeHtml(guidance)}</p><pre><code>${escapeHtml(code)}</code></pre></details>`;
++}
++
++function assessmentReturnMarkup() {
++  if (!state.assessmentReturn) return "";
++  return `<section class="panel roadmap-entry"><div><h2>Return to your job comparison</h2><p class="muted">The saved comparison keeps its original evidence. Open it, then choose “Compare with latest evidence” to save a new comparison.</p></div><button class="button secondary" data-action="return-to-comparison">Back to saved comparison →</button></section>`;
+ }
+ 
+ function syncRoadmapProgress() {
+@@ -466,10 +504,15 @@ function syncRoadmapProgress() {
+ async function loadWorkspace() {
+   // Sequential requests avoid several session-expiry dialogs opening together.
+   const skills = await request("/api/skills");
+-  const metadata = await request("/api/assessments/sql");
+-  const history = await request("/api/assessments/sql/attempts");
++  const metadata = await request("/api/assessments/catalog");
++  const history = await request("/api/assessments/attempts");
+   state.skills = skills.skills;
+-  state.metadata = metadata.assessment;
++  state.assessmentCatalog = metadata.assessments;
++  state.metadata =
++    state.assessmentCatalog.find(
++      (item) => item.skill_key === state.selectedSkill,
++    ) || state.assessmentCatalog[0];
++  state.selectedSkill = state.metadata.skill_key;
+   state.history = history.attempts;
+ }
+ 
+@@ -478,6 +521,10 @@ async function openAttempt(id) {
+     `/api/assessments/attempts/${encodeURIComponent(id)}`,
+   );
+   state.attempt = data.attempt;
++  state.selectedSkill = data.attempt.skill_key;
++  state.metadata = state.assessmentCatalog.find(
++    (item) => item.skill_key === state.selectedSkill,
++  );
+   state.roadmap = null;
+   state.view = data.attempt.status === "submitted" ? "results" : "quiz";
+   state.index = 0;
+@@ -583,12 +630,12 @@ root.addEventListener("submit", (event) => {
+         throw new Error("Choose a whole-number rating from 1 to 10.");
+       const data = await request("/api/skills", {
+         method: "POST",
+-        body: { skill_name: "SQL", proficiency },
++        body: { skill_name: state.metadata.label, proficiency },
+       });
+       state.skills.push(data.skill);
+       renderShell();
+       showNotice(
+-        "Self-reported SQL rating saved. New attempts will record this claim separately from their results.",
++        "Self-reported rating saved. New attempts will record this claim separately from their results.",
+         true,
+       );
+     }
+@@ -658,6 +705,9 @@ root.addEventListener("click", (event) => {
+     state.skills = [];
+     state.history = [];
+     state.metadata = null;
++    state.assessmentCatalog = [];
++    state.selectedSkill = "sql";
++    state.assessmentReturn = null;
+     state.attempt = null;
+     state.roadmap = null;
+     state.evidence = [];
+@@ -703,7 +753,20 @@ root.addEventListener("click", (event) => {
+     return;
+   }
+   void withBusy(button, async () => {
+-    if (action === "overview" || action === "history") {
++    if (action === "return-to-comparison") {
++      state.comparison = state.assessmentReturn;
++      clearMatchDraft();
++      state.view = "matches";
++      renderShell();
++      focusContent();
++    } else if (action === "select-assessment") {
++      state.selectedSkill = button.dataset.skill;
++      state.metadata = state.assessmentCatalog.find(
++        (item) => item.skill_key === state.selectedSkill,
++      );
++      renderShell();
++    } else if (action === "overview" || action === "history") {
++      state.assessmentReturn = null;
+       await loadWorkspace();
+       clearMatchDraft();
+       state.evidenceEditor = null;
+@@ -727,6 +790,7 @@ root.addEventListener("click", (event) => {
+         "demo-match",
+         "compare-keyword",
+         "compare-semantic",
++        "repeat-comparison",
+       ].includes(action)
+     ) {
+       await handleMatchAction(action, button);
+@@ -776,17 +840,32 @@ root.addEventListener("click", (event) => {
+         true,
+       );
+     } else if (action === "start") {
+-      const data = await request("/api/assessments/sql/attempts", {
+-        method: "POST",
+-        body: {},
+-      });
+-      state.history.unshift(data.attempt);
+-      state.attempt = data.attempt;
+-      state.index = 0;
+-      state.view = "quiz";
+-      renderShell();
+-      focusContent();
++      state.assessmentReturn =
++        state.view === "matches" ? state.comparison : null;
++      const key = button.dataset.skill || state.selectedSkill;
++      // Reuse an unfinished attempt for this skill, including from a job card.
++      const history = await request(
++        `/api/assessments/${encodeURIComponent(key)}/attempts`,
++      );
++      let attempt = history.attempts.find(
++        (item) => item.status === "in_progress",
++      );
++      if (!attempt) {
++        attempt = (
++          await request(
++            `/api/assessments/${encodeURIComponent(key)}/attempts`,
++            { method: "POST", body: {} },
++          )
++        ).attempt;
++      }
++      state.history = [
++        attempt,
++        ...state.history.filter((item) => item.id !== attempt.id),
++      ].slice(0, 50);
++      await openAttempt(attempt.id);
+     } else if (action === "open-attempt") {
++      state.assessmentReturn =
++        state.view === "matches" ? state.comparison : null;
+       await openAttempt(button.dataset.id);
+     } else if (action === "open-roadmap") {
+       const data = await request(`/api/roadmaps/attempts/${state.attempt.id}`, {
+diff --git a/backend/templates/workspace.html b/backend/templates/workspace.html
+index cb0d2e8..35da9fa 100644
+--- a/backend/templates/workspace.html
++++ b/backend/templates/workspace.html
+@@ -3,7 +3,7 @@
+ <head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+-  <meta name="description" content="Explore your SQL assessment evidence and identify your next areas for practice.">
++  <meta name="description" content="Explore your SQL, Python and REST API assessment evidence and identify your next areas for practice.">
+   <title>AI Career Navigator | Candidate workspace</title>
+   <link rel="icon" href="data:,">
+   <link rel="stylesheet" href="{{ url_for('static', filename='workspace.css') }}">
+diff --git a/backend/tests/test_multiskill_flow.py b/backend/tests/test_multiskill_flow.py
+new file mode 100644
+index 0000000..a8054c4
+--- /dev/null
++++ b/backend/tests/test_multiskill_flow.py
+@@ -0,0 +1,174 @@
++"""Cross-skill ownership, snapshot compatibility and evidence-to-roadmap checks."""
++
++import os
++from pathlib import Path
++import sys
++import unittest
++from uuid import uuid4
++
++os.environ["DATABASE_URL"] = "sqlite://"
++os.environ["JWT_SECRET_KEY"] = "assessment-tests-only-not-a-deployment-secret-2026"
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++from app import create_app
++from extensions import db
++from services.assessment_catalog import BANKS, new_snapshot
++from services.sql_assessment import new_snapshot as sql_snapshot
++
++
++CORRECT = {"sql": ("b", "c", "d", "a", "b", "c"),
++           "python": ("b", "a", "d", "c", "b", "d"),
++           "rest_api": ("a", "c", "b", "d", "a", "c")}
++
++
++class MultiSkillFlowTests(unittest.TestCase):
++    def setUp(self):
++        self.app = create_app()
++        self.app.config["TESTING"] = True
++        self.client = self.app.test_client()
++        self.owner = self.register("multi-one@example.test")
++        self.other = self.register("multi-two@example.test")
++
++    def tearDown(self):
++        with self.app.app_context():
++            db.session.remove()
++            db.engine.dispose()
++
++    def register(self, email):
++        account = {"name": "Multi-skill check", "email": email, "password": "local-test-only-password"}
++        self.assertEqual(self.client.post("/api/register", json=account).status_code, 201)
++        response = self.client.post("/api/login", json=account)
++        return {"Authorization": "Bearer " + response.get_json()["access_token"]}
++
++    def start(self, key, headers=None):
++        response = self.client.post(f"/api/assessments/{key}/attempts", headers=headers or self.owner, json={})
++        self.assertEqual(response.status_code, 201, response.get_json())
++        return response.get_json()["attempt"]
++
++    def submit(self, attempt, choices):
++        body = {"answers": [{"question_id": item["id"], "option_id": choice}
++                            for item, choice in zip(attempt["questions"], choices)]}
++        response = self.client.post(f"/api/assessments/attempts/{attempt['id']}/submit", headers=self.owner, json=body)
++        self.assertEqual(response.status_code, 200, response.get_json())
++        return response.get_json()["attempt"]
++
++    def compare(self):
++        response = self.client.post("/api/job-matches", headers=self.owner, json={
++            "submission_id": str(uuid4()), "title": "Backend prototype test role",
++            "description": "Requirements:\nPython, SQL and REST APIs.\nPreferred skills:\nDocker.",
++            "source_url": "", "mode": "keyword",
++        })
++        self.assertEqual(response.status_code, 201, response.get_json())
++        return response.get_json()["comparison"]
++
++    def roadmap(self, attempt):
++        response = self.client.post(f"/api/roadmaps/attempts/{attempt['id']}", headers=self.owner, json={})
++        self.assertEqual(response.status_code, 201, response.get_json())
++        return response.get_json()["roadmap"]
++
++    def test_sql_snapshot_stays_identical_and_new_snapshots_are_isolated(self):
++        self.assertEqual(new_snapshot("sql"), sql_snapshot())
++        first = new_snapshot("python")
++        first["questions"][0]["correct_option_id"] = "changed"
++        self.assertEqual(new_snapshot("python")["questions"][0]["correct_option_id"], "b")
++
++    def test_catalog_and_new_routes_require_auth_and_hide_keys(self):
++        for path in ("/api/assessments/catalog", "/api/assessments/attempts",
++                     "/api/assessments/python", "/api/assessments/rest_api/attempts"):
++            self.assertEqual(self.client.get(path).status_code, 401)
++        catalog = self.client.get("/api/assessments/catalog", headers=self.owner).get_json()["assessments"]
++        self.assertEqual([item["skill_key"] for item in catalog], ["sql", "python", "rest_api"])
++        for key in ("python", "rest_api"):
++            attempt = self.start(key)
++            self.assertEqual(len(attempt["questions"]), 6)
++            self.assertTrue(all(set(q) == {"id", "topic", "prompt", "options"} for q in attempt["questions"]))
++        self.assertNotIn("correct_option_id", str(catalog))
++
++    def test_unknown_skills_and_cross_bank_answers_are_rejected(self):
++        for method, path in (("GET", "/api/assessments/rust"), ("POST", "/api/assessments/rust/attempts"),
++                             ("GET", "/api/assessments/rust/attempts")):
++            self.assertEqual(self.client.open(path, method=method, json={}, headers=self.owner).status_code, 404)
++        attempt = self.start("python")
++        answers = [{"question_id": q["id"], "option_id": None} for q in BANKS["rest_api"]["questions"]]
++        path = f"/api/assessments/attempts/{attempt['id']}"
++        self.assertEqual(self.client.post(path + "/submit", json={"answers": answers}, headers=self.owner).status_code, 400)
++        self.assertEqual(self.client.get(path, headers=self.owner).get_json()["attempt"]["status"], "in_progress")
++
++    def test_claim_aliases_are_scoped_to_selected_skill(self):
++        for name in ("SQL", "Python programming", "RESTful APIs", "Django"):
++            self.assertEqual(self.client.post("/api/skills", headers=self.owner,
++                             json={"skill_name": name, "proficiency": 7}).status_code, 201)
++        for key, expected in (("sql", "SQL"), ("python", "Python programming"), ("rest_api", "RESTful APIs")):
++            attempt = self.start(key)
++            self.assertEqual([claim["skill_name"] for claim in attempt["self_reported_claims"]], [expected])
++
++    def test_history_and_attempts_are_owner_scoped_across_skills(self):
++        for key in BANKS:
++            attempt = self.start(key)
++            path = f"/api/assessments/attempts/{attempt['id']}"
++            self.assertEqual(self.client.get(path, headers=self.other).status_code, 404)
++            self.assertEqual(self.client.post(path + "/submit", headers=self.other, json={"answers": []}).status_code, 404)
++            history = self.client.get(f"/api/assessments/{key}/attempts", headers=self.owner).get_json()["attempts"]
++            self.assertEqual([item["skill_key"] for item in history], [key])
++        own = self.client.get("/api/assessments/attempts", headers=self.owner).get_json()["attempts"]
++        self.assertEqual({item["skill_key"] for item in own}, set(BANKS))
++        self.assertEqual(self.client.get("/api/assessments/attempts", headers=self.other).get_json()["attempts"], [])
++
++    def test_mixed_new_results_create_correct_resource_catalog_and_preserve_skips(self):
++        for key in ("python", "rest_api"):
++            with self.subTest(key=key):
++                # First topic: two correct; second: two wrong; third: two skipped.
++                choices = ("b", "a", "a", "b", None, None) if key == "python" else ("a", "c", "a", "a", None, None)
++                attempt = self.submit(self.start(key), choices)
++                roadmap = self.roadmap(attempt)
++                steps = roadmap["snapshot"]["steps"]
++                self.assertEqual(attempt["result"]["correct_count"], 2)
++                self.assertEqual([step["kind"] for step in steps], ["practice", "collect_evidence"])
++                self.assertEqual(steps[1]["source_counts"]["unanswered_count"], 2)
++                self.assertTrue(roadmap["snapshot"]["catalog_version"].startswith("python-" if key == "python" else "rest-http-"))
++                self.assertTrue(all(step["task"]["starter_code"] and step["resources"] for step in steps))
++                url = f"/api/roadmaps/attempts/{attempt['id']}"
++                self.assertEqual(self.client.post(url, json={}, headers=self.owner).get_json()["roadmap"], roadmap)
++                for method in ("GET", "POST"):
++                    self.assertEqual(self.client.open(url, method=method, json={}, headers=self.other).status_code, 404)
++                progress = f"/api/roadmaps/{roadmap['id']}/progress"
++                body = {"step_id": steps[0]["id"], "completed": True}
++                self.assertEqual(self.client.patch(progress, json=body, headers=self.other).status_code, 404)
++                self.assertEqual(self.client.patch(progress, json=body, headers=self.owner).get_json()["roadmap"]["completed_count"], 1)
++                saved = self.client.get(f"/api/assessments/attempts/{attempt['id']}", headers=self.owner).get_json()["attempt"]
++                self.assertEqual(saved, attempt)
++
++    def test_latest_per_skill_uses_skipped_attempt_not_previous_best(self):
++        for key in BANKS:
++            self.submit(self.start(key), CORRECT[key])
++        initial = self.compare()
++        self.assertEqual(initial["result"]["summary"]["skills_with_assessment_records"], 3)
++        skipped = self.submit(self.start("python"), (None,) * 6)
++        # An unfinished newer attempt must not hide the latest submitted result.
++        self.start("python")
++        other = self.start("rest_api", self.other)
++        current = self.compare()
++        rows = {row["skill_key"]: row for row in current["result"]["skills"]}
++        self.assertEqual(rows["python"]["assessment"]["attempt_id"], skipped["id"])
++        self.assertIn("entirely skipped", rows["python"]["guidance"])
++        self.assertNotEqual(rows["rest_api"]["assessment"]["attempt_id"], other["id"])
++        self.assertIn("answered correctly", rows["rest_api"]["guidance"])
++        self.assertIsNone(rows["docker"]["assessment"])
++        unchanged = self.client.get(f"/api/job-matches/{initial['id']}", headers=self.owner).get_json()["comparison"]
++        self.assertEqual(unchanged, initial)
++        self.assertEqual(current["candidate_snapshot"]["sql_assessment"], current["candidate_snapshot"]["assessments"]["sql"])
++
++    def test_correct_new_attempts_have_no_remedial_steps_and_skips_need_evidence(self):
++        for key in ("python", "rest_api"):
++            complete = self.submit(self.start(key), CORRECT[key])
++            self.assertEqual(complete["result"]["accuracy_on_answered_percent"], 100)
++            self.assertEqual(self.roadmap(complete)["snapshot"]["steps"], [])
++            skipped = self.submit(self.start(key), (None,) * 6)
++            self.assertIsNone(skipped["result"]["accuracy_on_answered_percent"])
++            steps = self.roadmap(skipped)["snapshot"]["steps"]
++            self.assertEqual(len(steps), 3)
++            self.assertTrue(all(step["kind"] == "collect_evidence" for step in steps))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/docs/EXPERT_REVIEW_PLAN.md b/docs/EXPERT_REVIEW_PLAN.md
+new file mode 100644
+index 0000000..bb8cf57
+--- /dev/null
++++ b/docs/EXPERT_REVIEW_PLAN.md
+@@ -0,0 +1,122 @@
++# Expert review plan — Saturday 3 October 2026
++
++Plan updated 29 September 2026. Target: a coherent, reproducible research prototype
++and an honest preliminary evaluation. Keep extending the existing repository and
++credit the original team contribution. Do not restart the project.
++
++## Central research question
++
++**Does assessment evidence, with explicit treatment of missing evidence, improve
++job-specific learning recommendations compared with self-reported skills alone?**
++
++This is a proposed question, not an established novelty claim. Semantic skill
++extraction already has substantial prior work; for example,
++[SkillSpan (NAACL 2022)](https://arxiv.org/abs/2204.12811) provides
++annotated job-posting skill spans and extraction baselines. The combination of
++assessment, provenance and uncertainty needs comparison with existing career and
++learning systems before asserting a gap. A collection of useful features alone
++is not proof of a new research contribution.
++
++## What works after the multi-skill batch
++
++- Local authenticated candidate workspace and database records.
++- SQL, Python and REST/HTTP foundation diagnostics with immutable results.
++- Curated topic-linked resources, original practice tasks and activity tracking.
++- Self-reported skills, project and certificate records, labelled unverified.
++- Ten-concept keyword and pretrained MiniLM comparison, with manual context review.
++- Cached jobs from two selected employer boards, freshness and source snapshots.
++- Job-to-assessment-to-roadmap navigation and new comparisons with updated evidence.
++- Frozen-job annotation, adjudication and extraction evaluation tools.
++
++Limits: six draft questions per skill, two employer boards, manual job refresh,
++uncalibrated semantic thresholds, no project-specific training, no validated
++proficiency scale, no verified credentials and no overall job suitability ranking.
++Live listings can change or close. A comparison is an explanation, not proof of
++eligibility, employability or comprehensive skill coverage.
++
++## Remaining work, in priority order
++
++| Work | Concrete output | Completion condition |
++| --- | --- | --- |
++| Question/content review | Human review of each item, answer, ambiguity and topic coverage | Record reviewer, date, issue and resolution; version any later bank change |
++| Literature comparison | 6–10 closely relevant primary studies/systems, with citations | Compare evidence sources, uncertainty, live-job use, recommendations and evaluation; state a bounded gap |
++| Independent extraction pilot | Original frozen text, independent reviews and adjudication | Use genuinely independent reviewers; preserve disagreements and evaluate held-out data only after decisions are fixed |
++| Recommendation pilot | Prespecified protocol, candidate cases and expert ratings | Test whether evidence changes the appropriateness of recommended actions; report the sample and limits |
++| Review documents | Project report, paper draft and short slide deck | Methods match implementation; distinguish observations, preliminary results and planned work |
++| Demonstration | Reproducible local run, prepared test account, cached example jobs and backup recording | Demonstrate the full flow without depending on new live fetches during review |
++| Portfolio/reproducibility | Focused commits, setup instructions, versioned run commands and contribution notes | Another reviewer can identify what was built and reproduce the stated checks |
++
++## Keep two experiments distinct
++
++**Extraction experiment:** compare keyword/alias extraction with keyword plus
++semantic suggestions on the same frozen job texts and independently reviewed
++labels. Report per-skill precision/recall/F1, coverage, disagreements and the
++uncertain-label policy. The existing tooling supports this experiment.
++
++The current AI-draft development diagnostic is debugging evidence. After the
++context correction, both methods agree with its scored development labels and
++produce identical skill sets. This does not establish independent accuracy or a
++semantic advantage. Do not turn AI answers into nominal human reviewers. Texts
++or labels inspected during development are not a clean independent test; obtain
++new held-out jobs where required and record the actual exposure history.
++
++**Recommendation experiment:** hold job requirements and extraction output fixed.
++Compare a documented self-report-only baseline against the assessment-informed
++policy. Use a small, explicitly exploratory set of consenting pilot participants
++or clearly labelled scenario cases if participants are unavailable. Avoid mixing
++synthetic scenarios with observed participant outcomes.
++
++Collect independently judged reference recommendations or fresh practical task
++evidence, not just ratings that reproduce our own decision rules. Blind and
++counterbalance the displayed methods when feasible. Record recommendation
++appropriateness, unsupported deficit assertions, usefulness and time to select a
++next step. Report disagreement, sample size and uncertainty. A convenience pilot
++cannot establish general effectiveness. Do not claim learning gains without an
++appropriate pre/post design and fresh tasks.
++
++Projects/certificates provide review context in this version; they do not alter
++roadmap scoring. Do not claim tested multi-source evidence fusion unless it is
++actually implemented and evaluated. Claims about practicality, traceability or
++usability must be separated from claims about recommendation accuracy.
++
++## Stored data, live data and training
++
++Use frozen, versioned, reviewed datasets for evaluation and any future supervised
++training. Current live postings are inference inputs; save source, timestamp and
++posting version with outputs. Do not automatically retrain on unreviewed live
++jobs. Prevent duplicate jobs, employers or near-identical texts leaking across
++training and evaluation partitions where relevant to the experiment.
++
++The current model is a pretrained encoder used for inference. Roadmap decisions
++are explicit rules. This is a valid prototype architecture for testing the stated
++research question; label it accurately. If institutional requirements specifically
++require training, define one small supervised task with reviewed training data,
++validation and an untouched test set. Do not fine-tune on the 24 AI-labelled jobs
++and present the result as independent validation or a new foundation model.
++
++## Schedule
++
++| Date | Deliverable |
++| --- | --- |
++| Tue 29 Sep | Install and check the integrated multi-skill batch; distribute content/literature work within the team; fix the study protocol |
++| Wed 30 Sep | Content review, bounded literature matrix, frozen prototype and start independent annotation/pilot |
++| Thu 1 Oct | Finish feasible pilot runs, analyse errors and document limitations; preserve incomplete results honestly |
++| Fri 2 Oct | Feature freeze; finish report/paper draft/slides; rehearse demo and record backup |
++| Sat 3 Oct | Show the system, available evidence and precisely scoped research question; obtain expert feedback |
++
++If independent data collection cannot finish, present the evaluation protocol and
++clearly marked preliminary diagnostics. Do not invent results to fill the paper.
++Draft the architecture/method sections while evaluation proceeds; leave results
++explicitly pending until measured.
++
++Defer a new framework, many additional occupations, market-wide job crawling,
++automatic certificate verification, large-model fine-tuning, dynamic course
++scraping and a general job-ranking model. A reliable complete backend-career
++example is the review target.
++
++## Faster delivery cadence
++
++Use complete batches: one patch, one integrated verification pass, one meaningful
++portfolio commit. Use a single concise smoke check locally, then move on. Split
++research reading, human review and writing among available team members while
++implementation progresses. This does not require restarting the codebase.
+diff --git a/docs/MULTISKILL_ASSESSMENTS.md b/docs/MULTISKILL_ASSESSMENTS.md
+new file mode 100644
+index 0000000..e1a611a
+--- /dev/null
++++ b/docs/MULTISKILL_ASSESSMENTS.md
+@@ -0,0 +1,117 @@
++# SQL, Python and REST API foundations
++
++Implemented 29 September 2026. This extends the existing application; it does not
++replace the original SQL bank, saved attempts or comparison snapshots.
++
++## Candidate flow
++
++1. Choose SQL, Python or REST APIs on Overview and optionally record a self-rating.
++2. Start or resume a six-question diagnostic. Submit answers or explicit skips.
++3. Open the saved result and its learning roadmap. Incorrect answers suggest
++   practice; skipped questions request more evidence, with optional resources.
++4. Compare a pasted or cached live job. The latest submitted attempt for each
++   supported skill appears beside claims, project tags and certificate tags.
++5. If a relevant skill is unassessed, choose **Assess [skill]** on its job card.
++6. After submission, return to the original comparison and choose **Compare with
++   latest evidence**. Review and submit the new comparison. The old one stays
++   unchanged. For live jobs this opens the current cached posting for review.
++
++An unfinished attempt is resumed when available. Draft answers stay in the tab;
++reloading still clears unsubmitted answers. Assessment history covers all skills.
++
++## Scope and versions
++
++| Skill | Bank | Topics | Resource catalogue |
++| --- | --- | --- | --- |
++| SQL | `sql-foundations-v1` (unchanged) | Filtering, joins, aggregation | `sql-resources-2026-09-26-v1` |
++| Python | `python-foundations-v1` | Functions, collections, exceptions | `python-resources-2026-09-29-v1` |
++| REST APIs | `rest-http-foundations-v1` | HTTP methods, status codes, representations | `rest-http-resources-2026-09-29-v1` |
++
++Each bank has two items per topic. REST questions sample HTTP knowledge; they do
++not measure complete REST architectural design or practical API implementation.
++All content is AI-assisted, original draft project content pending human review.
++No claim of psychometric validation, security against cheating or practical coding
++proficiency is made. Fixed questions with feedback are practice diagnostics;
++repeat scores are not independent evidence of learning gains.
++
++Scoring remains `equal-weight-with-skips-v1`. Resource selection remains the
++explicit `topic-evidence-rules-v1` policy. Answer keys stay server-side until
++submission, and submitted attempts retain the exact assigned question snapshot.
++No new database columns, migration or Python dependency is required.
++
++## API and compatibility
++
++- `GET /api/assessments/catalog`: supported banks, labels, topics and aliases;
++  no answers or explanations.
++- `GET /api/assessments/<skill_key>`: one bank's description.
++- `GET|POST /api/assessments/<skill_key>/attempts`: skill-scoped history/start.
++- `GET /api/assessments/attempts`: latest 50 attempts across skills.
++- Existing attempt read/submit and roadmap routes are unchanged and owner-scoped.
++- Existing `/sql` and `/sql/attempts` URLs continue to work.
++- SQL snapshot content and SQL roadmap payload semantics are preserved.
++- New candidate snapshots contain `assessments` keyed by skill and the legacy
++  `sql_assessment` field for compatibility. `snapshot_version` is
++  `candidate-evidence-v2`; results record `candidate_evidence_version` as
++  `latest-per-skill-v2`. Extraction rules/version are unchanged by this batch.
++
++Matching uses the latest **submitted**, not best-scoring, attempt independently
++for each skill. An all-skipped latest attempt remains unassessed. Other users'
++records, unfinished attempts and unrelated skill claims cannot provide assessment
++evidence for that skill. Projects and certifications remain unverified records.
++No overall score is calculated by mixing these evidence types.
++
++## Resource provenance
++
++Links and topic relevance checked on 29 September 2026. These are curated links,
++not a live course feed or endorsements of learning effectiveness. Course costs,
++certification conditions and future availability are not guaranteed.
++
++- [CS50 Python: functions](https://cs50.harvard.edu/python/weeks/0/),
++  [loops and collections](https://cs50.harvard.edu/python/weeks/2/),
++  [exceptions](https://cs50.harvard.edu/python/weeks/3/).
++- [Python 3.13 control flow](https://docs.python.org/3.13/tutorial/controlflow.html),
++  [data structures](https://docs.python.org/3.13/tutorial/datastructures.html),
++  [exceptions](https://docs.python.org/3.13/tutorial/errors.html).
++- [MDN guided client-server lesson](https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Server-side/First_steps/Client-Server_overview),
++  [HTTP methods](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods),
++  [status codes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status),
++  [HTTP overview](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview).
++- [CS50 Web: API lesson section](https://cs50.harvard.edu/web/notes/5/#apis):
++  supplementary API/JSON material; JavaScript familiarity helps. It is not a full
++  REST design course and does not replace method/status references.
++- HTTP answer-key reference: [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html),
++  especially methods, representation metadata and status definitions.
++
++Practice tasks are original, ungraded exercises. Python/HTTP starters render as
++text; SQL's existing `starter_sql` remains supported. No candidate code is executed.
++Marking a task complete only records self-reported activity and never changes a
++score or verifies improvement.
++
++## Verification and Windows smoke check
++
++Automated checks cover skill-scoped claims, cross-bank answer rejection, owner
++isolation, per-skill latest evidence, snapshot immutability and roadmap semantics.
++Existing SQL and live-job regression checks must continue to pass.
++
++From the repository root:
++
++```powershell
++.\.venv\Scripts\python.exe -m unittest discover -s backend/tests -v
++```
++
++After restarting Flask, hard-refresh `/app` (Ctrl+F5). Use a test account:
++
++1. Compare `Python, SQL and REST APIs are required for this backend role.` with
++   keyword mode. If the test account has no attempts, all three cards offer an
++   assessment action.
++2. Assess Python, submit at least one wrong answer and leave another topic
++   unanswered. Confirm the two needs have different labels in its roadmap.
++3. Open a CS50/Python resource link. Mark a practice task complete; its assessment
++   score must remain unchanged.
++4. Return to the saved comparison, then compare with latest evidence. The new
++   comparison includes the Python result while the original stays unchanged.
++5. Select REST APIs on Overview; check its heading and HTTP resources. Existing
++   SQL history and roadmaps must still open.
++
++These are functional checks using test data, not research results or participant
++outcomes. Keep test accounts and example attempts separate from research data.
+diff --git a/docs/PROJECT_STATUS.md b/docs/PROJECT_STATUS.md
+index 7e3d64f..8afbc6b 100644
+--- a/docs/PROJECT_STATUS.md
++++ b/docs/PROJECT_STATUS.md
+@@ -1,16 +1,16 @@
+ # AI Career Navigator — implementation and research status
+ 
+-Updated 28 September 2026. This file distinguishes working functionality from
++Updated 29 September 2026. This file distinguishes working functionality from
+ planned research claims. See [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for the broader
+ product vision; not every part of that vision is implemented.
+ 
+ | Area | Current implementation | Remaining work / limits |
+ | --- | --- | --- |
+ | Local application | Flask, PostgreSQL, authentication and browser workspace | Deployment hardening and a hosted demo remain separate work |
+-| SQL assessment | Six-question diagnostic, immutable attempts, accuracy/coverage and topic feedback | Draft content; independent content review and proficiency validation pending |
+-| Learning roadmap | Curated SQL resources and practice steps linked to diagnostic results | Progress is self-reported; broader Python/REST assessment and roadmaps pending |
++| Skill assessments | SQL, Python and REST/HTTP six-question diagnostics, immutable attempts, accuracy/coverage and topic feedback | Draft content; independent review and proficiency validation pending; HTTP questions do not assess full REST design |
++| Learning roadmap | Curated SQL/Python/HTTP resources and original tasks linked to topic evidence; job cards lead to assessments and new comparisons | Progress is self-reported; tasks are ungraded and learning effectiveness is unvalidated |
+ | Candidate evidence | Projects/certificates with skill tags, edits, version checks and archive/restore | Records remain unverified; no automatic credential verification |
+-| Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions, with context review rules and HTTP/REST wording support | Rules and thresholds need independent validation; no overall hiring probability, suitability rank or proficiency score |
++| Job comparison | Keyword/alias baseline and keywords plus pretrained MiniLM suggestions; latest submitted SQL/Python/REST evidence per skill and context review | Rules and thresholds need independent validation; no overall hiring probability, suitability rank or proficiency score |
+ | Live jobs | Selected Canonical/Razorpay boards, cached freshness, filtering and versioned comparison snapshots | Limited employer coverage, manual refresh, no market-wide feed |
+ | Evaluation tools | Frozen job exporter, independent annotation page, adjudication, paired extraction metrics and a separate AI-draft development diagnostic | Human validation remains pending; agreement with an AI draft is preliminary and cannot establish accuracy |
+ | Research contribution | Candidate evidence, uncertainty and source snapshots form the proposed approach | Literature gap/novelty and added decision value are not established by working features alone |
+@@ -45,8 +45,11 @@ rerunning that importer. The current job comparison uses the explicit ten-concep
+ catalogue in `backend/services/skill_catalog.py`; the earlier occupational datasets
+ are not yet a fully integrated recommendation model or labelled training dataset.
+ 
++The next delivery sequence and study priorities are in [EXPERT_REVIEW_PLAN.md](EXPERT_REVIEW_PLAN.md).
++
+ ## Relevant implementation notes
+ 
++- [MULTISKILL_ASSESSMENTS.md](MULTISKILL_ASSESSMENTS.md)
+ - [SQL_ASSESSMENT.md](SQL_ASSESSMENT.md)
+ - [ASSESSMENT_UI.md](ASSESSMENT_UI.md)
+ - [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md)
