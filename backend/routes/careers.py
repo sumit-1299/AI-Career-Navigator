@@ -345,46 +345,83 @@ def compare_careers():
     """
     Side-by-side career comparison between two careers.
     Evaluates:
-    - Common Skills
-    - Career A Only
-    - Career B Only
-    - Student Already Has
-    - Student Missing
-    - Overlap percentage, readiness percentages, and acquisition distances.
+    - Common Skills, Career A Only, Career B Only, Student Already Has, Student Missing
+    - Overlap percentage, readiness percentages, and acquisition distances
+    - Module 9.2: Market demand comparison, salary differential, study timeline delta,
+      career transition difficulty classification, and O*NET transferable skills matrix.
     Accepts:
-    - GET params: career_a_id, career_b_id, user_id (or via JWT)
-    - POST body: {"career_a_id": 1, "career_b_id": 2, "user_id": 3}
+    - GET params: career_a_id, career_b_id, hours_per_week (5, 10, 20), user_id (or via JWT)
+    - POST body: {"career_a_id": 1, "career_b_id": 2, "hours_per_week": 10, "user_id": 3}
     """
-    user_id = get_jwt_identity()
+    auth_user_id = get_jwt_identity()
+    user_id = auth_user_id
 
     if request.method == "POST":
         data = request.get_json() or {}
-        a_id = data.get("career_a_id") or data.get("career_a")
-        b_id = data.get("career_b_id") or data.get("career_b")
+        a_id_raw = data.get("career_a_id") or data.get("career_a")
+        b_id_raw = data.get("career_b_id") or data.get("career_b")
         if not user_id and data.get("user_id"):
             user_id = str(data.get("user_id"))
+        hours_per_week_raw = data.get("hours_per_week")
     else:
-        a_id = request.args.get("career_a_id", type=int) or request.args.get("career_a", type=int)
-        b_id = request.args.get("career_b_id", type=int) or request.args.get("career_b", type=int)
+        a_id_raw = request.args.get("career_a_id") or request.args.get("career_a")
+        b_id_raw = request.args.get("career_b_id") or request.args.get("career_b")
         if not user_id:
-            param_user = request.args.get("user_id", type=int)
+            param_user = request.args.get("user_id")
             if param_user:
                 user_id = str(param_user)
+        hours_per_week_raw = request.args.get("hours_per_week")
 
-    if not a_id or not b_id:
+    # 1. Validate career IDs
+    if not a_id_raw or not b_id_raw:
         return jsonify({
             "status": "error",
             "message": "Both career_a_id and career_b_id are required"
         }), 400
 
+    try:
+        a_id = int(a_id_raw)
+        b_id = int(b_id_raw)
+        if a_id <= 0 or b_id <= 0:
+            return jsonify({
+                "status": "error",
+                "message": "Both career_a_id and career_b_id must be valid positive integers"
+            }), 400
+    except (ValueError, TypeError):
+        return jsonify({
+            "status": "error",
+            "message": "Both career_a_id and career_b_id must be valid positive integers"
+        }), 400
+
+    # 2. Validate study intensity (hours_per_week)
+    hours_per_week = 10
+    if hours_per_week_raw is not None:
+        try:
+            hpw_val = int(hours_per_week_raw)
+            if hpw_val not in [5, 10, 20]:
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+                }), 400
+            hours_per_week = hpw_val
+        except (ValueError, TypeError):
+            return jsonify({
+                "status": "error",
+                "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+            }), 400
+
     student_skills = []
     if user_id:
-        student_skills = Skill.query.filter_by(user_id=int(user_id)).all()
+        try:
+            student_skills = Skill.query.filter_by(user_id=int(user_id)).all()
+        except Exception:
+            student_skills = []
 
     comparison = CareerComparisonService.compare_careers(
-        career_a_id=int(a_id),
-        career_b_id=int(b_id),
-        student_skills=student_skills
+        career_a_id=a_id,
+        career_b_id=b_id,
+        student_skills=student_skills,
+        hours_per_week=hours_per_week
     )
 
     if not comparison:

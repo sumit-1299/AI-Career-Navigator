@@ -23,7 +23,9 @@ from models.career_preference import CareerPreference
 from models.skill import Skill
 from models.student_profile import StudentProfile
 from models.user import User
+from services.career_comparison_service import CareerComparisonService, parse_salary_amount
 from services.career_recommendation_service import CareerRecommendationService
+from services.career_transition_service import CareerTransitionService
 
 
 class TestPhase9Module91ScoringModel(unittest.TestCase):
@@ -341,6 +343,239 @@ class TestPhase9Module91Integration(unittest.TestCase):
             self.assertIn("missing_skills", rec)
             self.assertIn("high_priority_missing_skills", rec)
             self.assertIn("explanation", rec)
+
+class TestPhase9Module92CareerComparison(unittest.TestCase):
+    """Unit and Integration tests for Module 9.2: Career Comparison & Transition Explorer."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def test_parse_salary_amount_utility(self):
+        """Verify salary string parsing handles formatted, unformatted, and edge-case inputs."""
+        self.assertEqual(parse_salary_amount("$115,000 / yr"), 115000)
+        self.assertEqual(parse_salary_amount("$78,000"), 78000)
+        self.assertEqual(parse_salary_amount("$120k"), 120000)
+        self.assertEqual(parse_salary_amount("95000"), 95000)
+        self.assertIsNone(parse_salary_amount(None))
+        self.assertIsNone(parse_salary_amount(""))
+        self.assertIsNone(parse_salary_amount("Negotiable / Competitive"))
+
+    def test_calculate_salary_differential(self):
+        """Verify salary differential across entry, median, and senior compensation bands."""
+        market_a = {
+            "salary_bands": {
+                "entry_level": "$75,000 / yr",
+                "median": "$105,000 / yr",
+                "senior": "$140,000 / yr"
+            }
+        }
+        market_b = {
+            "salary_bands": {
+                "entry_level": "$85,000 / yr",
+                "median": "$125,000 / yr",
+                "senior": "$165,000 / yr"
+            }
+        }
+
+        diff = CareerComparisonService.calculate_salary_differential(
+            "Software Developer", "Cloud Engineer", market_a, market_b
+        )
+
+        self.assertEqual(diff["entry_level"]["delta_amount"], 10000)
+        self.assertEqual(diff["median"]["delta_amount"], 20000)
+        self.assertEqual(diff["senior"]["delta_amount"], 25000)
+        self.assertEqual(diff["median"]["higher_salary_career"], "Cloud Engineer")
+        self.assertEqual(diff["median_delta"], 20000)
+        # Median percentage delta: (20000 / 105000) * 100 = 19.0%
+        self.assertAlmostEqual(diff["median_percentage_delta"], 19.0, places=1)
+        self.assertIn("+$20,000 / yr", diff["median"]["formatted_delta"])
+
+    def test_calculate_market_comparison(self):
+        """Verify market demand comparison and delta calculations."""
+        career_a = Career.query.get(1)  # Software Developer
+        career_b = Career.query.get(6)  # Cloud Engineer
+        market_a = {
+            "demand_score": 92,
+            "demand_level": "Very High",
+            "five_year_growth_rate": "+22%",
+            "top_hiring_sectors": ["FinTech", "SaaS"]
+        }
+        market_b = {
+            "demand_score": 94,
+            "demand_level": "Extremely High",
+            "five_year_growth_rate": "+28%",
+            "top_hiring_sectors": ["Cloud Providers", "Telecom"]
+        }
+
+        comp = CareerComparisonService.calculate_market_comparison(career_a, career_b, market_a, market_b)
+        self.assertEqual(comp["demand_delta"], 2)
+        self.assertEqual(comp["higher_demand_career"], career_b.title)
+        self.assertEqual(comp["career_a"]["demand_score"], 92)
+        self.assertEqual(comp["career_b"]["demand_score"], 94)
+        self.assertIn("delta: +2 points", comp["summary"])
+
+    def test_calculate_timeline_comparison(self):
+        """Verify timeline comparison under study intensity options (5, 10, 20 hrs/week)."""
+        career_a = Career.query.get(1)
+        career_b = Career.query.get(2)
+        gaps_a = [{"skill_name": "Python", "status": "MISSING", "current_proficiency": 0.0, "required_level": 4}]
+        gaps_b = [{"skill_name": "HTML", "status": "MISSING", "current_proficiency": 0.0, "required_level": 3}]
+
+        for hours in [5, 10, 20]:
+            timeline = CareerComparisonService.calculate_timeline_comparison(
+                career_a, career_b, gaps_a, gaps_b, hours_per_week=hours
+            )
+            self.assertEqual(timeline["hours_per_week"], hours)
+            self.assertIn("career_a", timeline)
+            self.assertIn("career_b", timeline)
+            self.assertIn("estimated_study_weeks_difference", timeline)
+            self.assertIn("estimated_study_hours_difference", timeline)
+            self.assertIn("faster_career", timeline)
+
+    def test_transition_difficulty_classification(self):
+        """Verify transition difficulty tiers (LOW, MODERATE, HIGH) and human-readable labels."""
+        # 1 -> 6 (Software Developer -> Cloud Engineer)
+        analysis = CareerTransitionService.analyze_transition(1, 6)
+        self.assertIsNotNone(analysis)
+        summary = analysis["transition_summary"]
+        self.assertIn(summary["transition_difficulty"], ["LOW", "MODERATE", "HIGH"])
+        self.assertIn(
+            summary["difficulty_label"],
+            ["Smooth Lateral Transition", "Moderate Upskilling Transition", "Significant Cross-Domain Pivot"]
+        )
+
+    def test_transferable_skills_and_status(self):
+        """Verify transferable skill recognition and DIRECT_TRANSFER / SKILL_UPGRADE_NEEDED statuses."""
+        self.assertTrue(CareerTransitionService.is_transferable("Python"))
+        self.assertTrue(CareerTransitionService.is_transferable("Git"))
+        self.assertTrue(CareerTransitionService.is_transferable("Programming"))
+
+        # In career transition analysis:
+        analysis = CareerTransitionService.analyze_transition(1, 2)
+        self.assertIsNotNone(analysis)
+        valid_statuses = {"DIRECT_TRANSFER", "SKILL_UPGRADE_NEEDED", "NEW_SKILL_REQUIRED"}
+        for skill in analysis["overlapping_skills"]:
+            self.assertIn(skill["status"], valid_statuses)
+            self.assertIn("is_onet_transferable", skill)
+
+    def test_onet_transition_matrix_terms(self):
+        """Verify O*NET transferable terms are loaded and accessible."""
+        terms = CareerTransitionService.get_onet_transferable_terms()
+        self.assertIsInstance(terms, set)
+        self.assertGreater(len(terms), 0)
+
+    def test_compare_careers_backward_compatibility(self):
+        """Verify all legacy compare_careers keys and structures remain present and untouched."""
+        result = CareerComparisonService.compare_careers(1, 2, hours_per_week=10)
+        self.assertIsNotNone(result)
+
+        # Legacy keys
+        legacy_keys = [
+            "career_a", "career_b", "comparison_metrics", "common_skills",
+            "career_a_only", "career_b_only", "student_already_has", "student_missing"
+        ]
+        for key in legacy_keys:
+            self.assertIn(key, result)
+
+        career_a_fields = [
+            "id", "title", "domain", "readiness_percentage", "skill_acquisition_distance",
+            "total_required_skills", "matched_skills_count", "missing_skills_count", "weak_skills_count"
+        ]
+        for field in career_a_fields:
+            self.assertIn(field, result["career_a"])
+            self.assertIn(field, result["career_b"])
+
+    def test_api_get_compare_careers_endpoint(self):
+        """Verify GET /api/careers/compare returns additive Module 9.2 intelligence fields."""
+        resp = self.client.get("/api/careers/compare?career_a_id=1&career_b_id=6&hours_per_week=20")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        comparison = data["comparison"]
+
+        # Additive Module 9.2 fields
+        self.assertIn("market_comparison", comparison)
+        self.assertIn("demand_delta", comparison)
+        self.assertIn("salary_differential", comparison)
+        self.assertIn("salary_delta", comparison)
+        self.assertIn("timeline_comparison", comparison)
+        self.assertIn("estimated_study_weeks_difference", comparison)
+        self.assertIn("transition_analysis", comparison)
+        self.assertIn("transition_difficulty", comparison)
+        self.assertIn("transition_difficulty_label", comparison)
+        self.assertIn("transferable_skills", comparison)
+
+        # Verify hours_per_week propagation
+        self.assertEqual(comparison["timeline_comparison"]["hours_per_week"], 20)
+
+    def test_api_post_compare_careers_endpoint(self):
+        """Verify POST /api/careers/compare returns additive Module 9.2 intelligence fields."""
+        payload = {"career_a_id": 1, "career_b_id": 2, "hours_per_week": 5}
+        resp = self.client.post("/api/careers/compare", json=payload)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        comparison = data["comparison"]
+
+        self.assertIn("market_comparison", comparison)
+        self.assertIn("salary_differential", comparison)
+        self.assertIn("timeline_comparison", comparison)
+        self.assertEqual(comparison["timeline_comparison"]["hours_per_week"], 5)
+
+    def test_api_compare_careers_validations(self):
+        """Verify robust input validation on compare_careers (missing, non-int, invalid hours, 404)."""
+        # Missing parameter
+        resp1 = self.client.get("/api/careers/compare?career_a_id=1")
+        self.assertEqual(resp1.status_code, 400)
+        self.assertIn("Both career_a_id and career_b_id are required", resp1.get_json()["message"])
+
+        # Non-integer ID
+        resp2 = self.client.get("/api/careers/compare?career_a_id=abc&career_b_id=2")
+        self.assertEqual(resp2.status_code, 400)
+        self.assertIn("must be valid positive integers", resp2.get_json()["message"])
+
+        # Non-positive ID
+        resp3 = self.client.get("/api/careers/compare?career_a_id=-1&career_b_id=2")
+        self.assertEqual(resp3.status_code, 400)
+        self.assertIn("must be valid positive integers", resp3.get_json()["message"])
+
+        # Invalid hours_per_week
+        resp4 = self.client.get("/api/careers/compare?career_a_id=1&career_b_id=2&hours_per_week=15")
+        self.assertEqual(resp4.status_code, 400)
+        self.assertIn("Supported values are 5, 10, or 20", resp4.get_json()["message"])
+
+        # Non-existent career ID
+        resp5 = self.client.get("/api/careers/compare?career_a_id=9999&career_b_id=2")
+        self.assertEqual(resp5.status_code, 404)
+
+    def test_api_get_career_transition_endpoint(self):
+        """Verify GET /api/careers/<from>/transition/<to> returns complete pathway analysis."""
+        resp = self.client.get("/api/careers/1/transition/6")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        transition = data["transition"]
+
+        self.assertEqual(transition["source_career"]["id"], 1)
+        self.assertEqual(transition["target_career"]["id"], 6)
+        self.assertIn("transition_summary", transition)
+        self.assertIn("transition_difficulty", transition["transition_summary"])
+        self.assertIn("overlapping_skills", transition)
+        self.assertIn("transferable_skills", transition)
+        self.assertIn("additional_skills_required", transition)
+
+        # Non-existent careers
+        resp_404 = self.client.get("/api/careers/9999/transition/1")
+        self.assertEqual(resp_404.status_code, 404)
 
 
 if __name__ == "__main__":
