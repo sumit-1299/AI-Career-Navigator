@@ -319,6 +319,12 @@ export function CareersPage() {
                       Compare
                     </button>
                     <button
+                      onClick={() => navigate(`/skill-gap?career_id=${c.id}&tab=pathways`)}
+                      className="px-2.5 py-1.5 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                    >
+                      Pathways
+                    </button>
+                    <button
                       onClick={() => navigate(`/skill-gap?career_id=${c.id}`)}
                       className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold rounded-lg shadow-sm transition flex items-center gap-1"
                     >

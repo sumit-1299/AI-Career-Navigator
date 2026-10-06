@@ -25,6 +25,7 @@ from services.student_analytics_service import StudentAnalyticsService
 from services.roadmap_service import generate_learning_roadmap
 from services.skill_gap_service import assess_career_skill_gap
 from services.readiness_summary_service import ReadinessSummaryService
+from services.career_pathway_service import CareerPathwayService
 
 careers_bp = Blueprint("careers", __name__, url_prefix="/api/careers")
 
@@ -581,4 +582,94 @@ def get_career_readiness_summary(career_id):
         }), 404
 
     return jsonify(summary), 200
+
+
+@careers_bp.route("/<int:career_id>/pathways", methods=["GET", "POST"])
+@jwt_required(optional=True)
+def get_career_pathways(career_id):
+    """
+    Module 9.3: Interactive Career Pathway Branching & Elective Specialization Tree.
+    Evaluates available pathways, core vs elective competencies, student matches and gaps,
+    learning effort under configurable study intensities (5, 10, 20 hrs/week),
+    and ranked pathway recommendations.
+    Accepts:
+    - GET params: hours_per_week (5, 10, 20), user_id (optional, overridden by JWT identity if authenticated)
+    - POST body: {"hours_per_week": 10, "user_id": 1}
+    """
+    # 1. Validate career ID
+    if career_id <= 0:
+        return jsonify({
+            "status": "error",
+            "message": "career_id must be a valid positive integer"
+        }), 400
+
+    # 2. Extract study intensity (hours_per_week)
+    hours_per_week = 10
+    if request.method == "POST":
+        data = request.get_json() or {}
+        if "hours_per_week" in data:
+            try:
+                hours_per_week = int(data["hours_per_week"])
+            except (ValueError, TypeError):
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+                }), 400
+    else:
+        hours_raw = request.args.get("hours_per_week")
+        if hours_raw is not None:
+            try:
+                hours_per_week = int(hours_raw)
+            except (ValueError, TypeError):
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+                }), 400
+
+    if hours_per_week not in [5, 10, 20]:
+        return jsonify({
+            "status": "error",
+            "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+        }), 400
+
+    # 3. Resolve user identity: prioritize JWT, fallback to query param or POST body
+    auth_user_id = get_jwt_identity()
+    user_id = None
+    if auth_user_id:
+        try:
+            user_id = int(auth_user_id)
+        except (ValueError, TypeError):
+            user_id = None
+    else:
+        if request.method == "POST":
+            data = request.get_json() or {}
+            param_user = data.get("user_id")
+        else:
+            param_user = request.args.get("user_id")
+        if param_user:
+            try:
+                user_id = int(param_user)
+            except (ValueError, TypeError):
+                return jsonify({
+                    "status": "error",
+                    "message": "user_id must be a valid integer"
+                }), 400
+
+    # 4. Evaluate career pathways
+    result = CareerPathwayService.evaluate_career_pathways(
+        career_id=career_id,
+        user_id=user_id,
+        hours_per_week=hours_per_week
+    )
+
+    if not result:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with ID {career_id} not found"
+        }), 404
+
+    return jsonify({
+        "status": "success",
+        **result
+    }), 200
 

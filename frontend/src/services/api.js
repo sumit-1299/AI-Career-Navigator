@@ -192,6 +192,15 @@ export const api = {
   compareCareers: (careerAId, careerBId) =>
     request(`/careers/compare?career_a_id=${careerAId}&career_b_id=${careerBId}`),
 
+  getCareerPathways: (careerId, options = {}) => {
+    const { hoursPerWeek = 10, userId = null } = options;
+    const params = new URLSearchParams();
+    if (hoursPerWeek) params.append('hours_per_week', hoursPerWeek);
+    if (userId) params.append('user_id', userId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request(`/careers/${careerId}/pathways${query}`);
+  },
+
   getCareerAnalytics: (careerId) => request(`/careers/${careerId}/analytics`),
 
   getCareerReadinessSummary: (careerId, options = {}) => {

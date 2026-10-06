@@ -26,6 +26,7 @@ from models.user import User
 from services.career_comparison_service import CareerComparisonService, parse_salary_amount
 from services.career_recommendation_service import CareerRecommendationService
 from services.career_transition_service import CareerTransitionService
+from services.career_pathway_service import CareerPathwayService
 
 
 class TestPhase9Module91ScoringModel(unittest.TestCase):
@@ -576,6 +577,241 @@ class TestPhase9Module92CareerComparison(unittest.TestCase):
         # Non-existent careers
         resp_404 = self.client.get("/api/careers/9999/transition/1")
         self.assertEqual(resp_404.status_code, 404)
+
+
+class TestPhase9Module93CareerPathways(unittest.TestCase):
+    """Unit and Integration tests for Module 9.3: Interactive Career Pathway Branching & Elective Specialization Tree."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+
+        # Fetch or create test user with skills
+        cls.user = User.query.filter_by(email="phase9_test_student@example.com").first()
+        if cls.user:
+            resp = cls.client.post("/api/login", json={
+                "email": "phase9_test_student@example.com",
+                "password": "password123"
+            })
+            cls.token = resp.get_json().get("access_token")
+            cls.headers = {"Authorization": f"Bearer {cls.token}"}
+        else:
+            cls.token = None
+            cls.headers = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def test_career_with_multiple_supported_pathways(self):
+        """Verify career with multiple supported specialization pathways (e.g., Career 1: Software Developer)."""
+        result = CareerPathwayService.evaluate_career_pathways(1, user_id=None, hours_per_week=10)
+        self.assertIsNotNone(result)
+        self.assertTrue(result["has_multiple_pathways"])
+        self.assertIsNone(result["limitation_note"])
+        self.assertGreaterEqual(result["pathways_count"], 2)
+        self.assertEqual(result["career"]["title"], "Software Developer")
+
+        # Verify overlapping skills across pathways
+        overlapping = [s["skill_name"] for s in result["overlapping_skills"]]
+        self.assertIn("Data Structures", overlapping)
+        self.assertIn("Git", overlapping)
+
+        # Verify distinct pathways exist with core vs elective differentiation
+        pathway_ids = [p["id"] for p in result["pathways"]]
+        self.assertIn("sw-dev-python", pathway_ids)
+        self.assertIn("sw-dev-java", pathway_ids)
+
+        python_p = next(p for p in result["pathways"] if p["id"] == "sw-dev-python")
+        java_p = next(p for p in result["pathways"] if p["id"] == "sw-dev-java")
+
+        self.assertIn("Python", [s["skill_name"] for s in python_p["elective_skills"]])
+        self.assertIn("Java", [s["skill_name"] for s in java_p["elective_skills"]])
+
+    def test_career_with_only_one_pathway(self):
+        """Verify career with single supported pathway and explicit limitation note (e.g., Career 7: DevOps)."""
+        result = CareerPathwayService.evaluate_career_pathways(7, user_id=None, hours_per_week=10)
+        self.assertIsNotNone(result)
+        self.assertFalse(result["has_multiple_pathways"])
+        self.assertEqual(result["pathways_count"], 1)
+        self.assertIsNotNone(result["limitation_note"])
+        self.assertIn("Single consolidated pathway supported", result["limitation_note"])
+        self.assertEqual(result["career"]["title"], "DevOps Engineer")
+
+        single_p = result["pathways"][0]
+        self.assertTrue(single_p["is_primary"])
+        self.assertEqual(len(single_p["elective_skills"]), 0)
+        self.assertEqual(len(single_p["core_skills"]), 5)
+
+    def test_student_with_matching_skills_personalization(self):
+        """Verify student with matching skills obtains higher readiness, matched skills, and customized ranking."""
+        mock_skills = [
+            Skill(user_id=888, skill_name="Python", proficiency=8),  # Level 4/5
+            Skill(user_id=888, skill_name="Git", proficiency=8),     # Level 4/5
+        ]
+        career = Career.query.get(1)
+        config = CareerPathwayService.get_pathway_configuration(career)
+        evaluated = [
+            CareerPathwayService.evaluate_pathway_for_student(career, pdef, mock_skills, hours_per_week=10)
+            for pdef in config["pathways"]
+        ]
+        evaluated.sort(key=lambda p: (-p["suitability_score"], -p["readiness_percentage"]))
+
+        # Python track should rank first because student has Python and Git
+        top_p = evaluated[0]
+        self.assertEqual(top_p["id"], "sw-dev-python")
+        self.assertGreater(top_p["readiness_percentage"], 40.0)
+        self.assertGreaterEqual(top_p["matched_skills_count"], 2)
+
+    def test_student_with_missing_skills(self):
+        """Verify student with no recorded skills has 0.0% readiness and actionable gaps for all skills."""
+        career = Career.query.get(1)
+        config = CareerPathwayService.get_pathway_configuration(career)
+        python_def = next(p for p in config["pathways"] if p["id"] == "sw-dev-python")
+
+        evaluated = CareerPathwayService.evaluate_pathway_for_student(
+            career, python_def, student_skills=[], hours_per_week=10
+        )
+        self.assertEqual(evaluated["readiness_percentage"], 0.0)
+        self.assertEqual(evaluated["matched_skills_count"], 0)
+        self.assertEqual(evaluated["missing_skills_count"], evaluated["total_skills_count"])
+        self.assertGreater(evaluated["estimated_total_hours"], 0)
+        self.assertGreater(evaluated["estimated_weeks"], 0)
+
+    def test_pathway_readiness_calculation_bounds(self):
+        """Verify readiness percentage calculation stays deterministically bounded between 0.0 and 100.0%."""
+        career = Career.query.get(1)
+        config = CareerPathwayService.get_pathway_configuration(career)
+        python_def = next(p for p in config["pathways"] if p["id"] == "sw-dev-python")
+
+        # 1. Zero skills -> 0.0%
+        res_zero = CareerPathwayService.evaluate_pathway_for_student(career, python_def, [], 10)
+        self.assertEqual(res_zero["readiness_percentage"], 0.0)
+
+        # 2. Perfect skills (all at 10/10) -> 100.0%
+        perfect_skills = [
+            Skill(user_id=777, skill_name="Data Structures", proficiency=10),
+            Skill(user_id=777, skill_name="Git", proficiency=10),
+            Skill(user_id=777, skill_name="SQL", proficiency=10),
+            Skill(user_id=777, skill_name="Python", proficiency=10),
+        ]
+        res_perfect = CareerPathwayService.evaluate_pathway_for_student(career, python_def, perfect_skills, 10)
+        self.assertEqual(res_perfect["readiness_percentage"], 100.0)
+        self.assertEqual(res_perfect["missing_skills_count"], 0)
+        self.assertEqual(res_perfect["estimated_total_hours"], 0)
+
+    def test_pathway_ranking_deterministic(self):
+        """Verify that pathway ranking correctly prioritizes Java specialization for Java-oriented student."""
+        mock_java_skills = [
+            Skill(user_id=666, skill_name="Java", proficiency=8),
+            Skill(user_id=666, skill_name="Git", proficiency=8),
+        ]
+        career = Career.query.get(1)
+        config = CareerPathwayService.get_pathway_configuration(career)
+        evaluated = [
+            CareerPathwayService.evaluate_pathway_for_student(career, p, mock_java_skills, 10)
+            for p in config["pathways"]
+        ]
+        evaluated.sort(key=lambda p: (-p["suitability_score"], -p["readiness_percentage"]))
+
+        # For student with Java, Enterprise Java Architecture Track should be rank 1
+        self.assertEqual(evaluated[0]["id"], "sw-dev-java")
+
+    def test_prerequisite_dependencies_validation(self):
+        """Verify prerequisite dependency tracking identifies satisfied vs missing foundational skills."""
+        # Student has HTML and CSS, but lacks JavaScript
+        student_map = {"html": 4.0, "css": 4.0}
+        prereqs = CareerPathwayService.check_prerequisites("React", student_map)
+        self.assertFalse(prereqs["prerequisites_satisfied"])
+        self.assertIn("Javascript", prereqs["missing_prerequisites"])
+
+        # Student acquires JavaScript
+        student_map["javascript"] = 4.0
+        prereqs_satisfied = CareerPathwayService.check_prerequisites("React", student_map)
+        self.assertTrue(prereqs_satisfied["prerequisites_satisfied"])
+        self.assertEqual(len(prereqs_satisfied["missing_prerequisites"]), 0)
+
+    def test_api_get_pathways_endpoint(self):
+        """Verify GET /api/careers/<id>/pathways returns complete structured response payload."""
+        resp = self.client.get("/api/careers/1/pathways?hours_per_week=10")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertIn("career", data)
+        self.assertIn("pathways", data)
+        self.assertIn("overlapping_skills", data)
+        self.assertIn("recommended_pathway_id", data)
+        self.assertIn("recommended_pathway_name", data)
+        self.assertIn("recommendation_summary", data)
+        self.assertEqual(data["hours_per_week"], 10)
+
+        # Inspect first pathway shape
+        p = data["pathways"][0]
+        self.assertIn("id", p)
+        self.assertIn("name", p)
+        self.assertIn("specialization_focus", p)
+        self.assertIn("readiness_percentage", p)
+        self.assertIn("effort_tier", p)
+        self.assertIn("estimated_weeks", p)
+        self.assertIn("core_skills", p)
+        self.assertIn("elective_skills", p)
+        self.assertIn("study_milestones", p)
+
+    def test_api_get_pathways_authentication(self):
+        """Verify JWT authenticated request returns is_personalized True with authoritative user identity."""
+        if self.token:
+            resp = self.client.get("/api/careers/1/pathways", headers=self.headers)
+            self.assertEqual(resp.status_code, 200)
+            data = resp.get_json()
+            self.assertTrue(data["is_personalized"])
+            self.assertEqual(data["user_id"], self.user.id)
+
+    def test_api_pathways_input_validations(self):
+        """Verify input validation for non-existent careers, invalid IDs, and invalid study intensities."""
+        # Non-existent career ID -> 404
+        resp1 = self.client.get("/api/careers/9999/pathways")
+        self.assertEqual(resp1.status_code, 404)
+
+        # Non-positive career ID -> 400
+        resp2 = self.client.get("/api/careers/0/pathways")
+        self.assertEqual(resp2.status_code, 400)
+
+        # Invalid hours_per_week -> 400
+        resp3 = self.client.get("/api/careers/1/pathways?hours_per_week=15")
+        self.assertEqual(resp3.status_code, 400)
+        self.assertIn("Supported values are 5, 10, or 20", resp3.get_json()["message"])
+
+        # Non-integer hours_per_week -> 400
+        resp4 = self.client.get("/api/careers/1/pathways?hours_per_week=abc")
+        self.assertEqual(resp4.status_code, 400)
+
+    def test_api_post_pathways_endpoint(self):
+        """Verify POST /api/careers/<id>/pathways accepts JSON body configuration."""
+        resp = self.client.post("/api/careers/2/pathways", json={"hours_per_week": 20})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["hours_per_week"], 20)
+        self.assertTrue(data["has_multiple_pathways"])
+
+    def test_backward_compatibility_career_endpoints(self):
+        """Verify that existing Phase 1-9.2 career endpoints remain 100% operational."""
+        # 1. GET /api/careers
+        resp_list = self.client.get("/api/careers")
+        self.assertEqual(resp_list.status_code, 200)
+
+        # 2. GET /api/careers/1
+        resp_detail = self.client.get("/api/careers/1")
+        self.assertEqual(resp_detail.status_code, 200)
+
+        # 3. GET /api/careers/compare
+        resp_comp = self.client.get("/api/careers/compare?career_a_id=1&career_b_id=2")
+        self.assertEqual(resp_comp.status_code, 200)
+        self.assertIn("market_comparison", resp_comp.get_json()["comparison"])
 
 
 if __name__ == "__main__":
