@@ -26,6 +26,7 @@ from services.roadmap_service import generate_learning_roadmap
 from services.skill_gap_service import assess_career_skill_gap
 from services.readiness_summary_service import ReadinessSummaryService
 from services.career_pathway_service import CareerPathwayService
+from services.career_simulator_service import CareerSimulatorService
 
 careers_bp = Blueprint("careers", __name__, url_prefix="/api/careers")
 
@@ -672,4 +673,109 @@ def get_career_pathways(career_id):
         "status": "success",
         **result
     }), 200
+
+
+@careers_bp.route("/<int:career_id>/simulate-skill", methods=["GET", "POST"])
+@jwt_required(optional=True)
+def simulate_career_skill(career_id):
+    """
+    Module 9.4: "What If I Learn Skill X?" Interactive Career Simulator.
+    Calculates in-memory impact of hypothetical skill acquisition/improvement on career readiness,
+    remaining skill gaps, study timeline, and specialization pathways.
+    Strictly read-only and immutable.
+    """
+    # 1. Validate career ID
+    if career_id <= 0:
+        return jsonify({
+            "status": "error",
+            "message": "career_id must be a valid positive integer"
+        }), 400
+
+    # 2. Extract inputs from POST body or GET query params
+    if request.method == "POST":
+        data = request.get_json() or {}
+        skill_id = data.get("skill_id")
+        skill_name = data.get("skill_name")
+        simulated_level = data.get("simulated_level")
+        hours_per_week_raw = data.get("hours_per_week")
+        user_id_param = data.get("user_id")
+    else:
+        skill_id = request.args.get("skill_id")
+        skill_name = request.args.get("skill_name")
+        simulated_level = request.args.get("simulated_level")
+        hours_per_week_raw = request.args.get("hours_per_week")
+        user_id_param = request.args.get("user_id")
+
+    # Validate that at least one of skill_id or skill_name is provided
+    if not skill_id and not skill_name:
+        return jsonify({
+            "status": "error",
+            "message": "Either skill_id or skill_name is required"
+        }), 400
+
+    if simulated_level is None:
+        return jsonify({
+            "status": "error",
+            "message": "simulated_level is required"
+        }), 400
+
+    # 3. Validate study intensity (hours_per_week)
+    hours_per_week = 10
+    if hours_per_week_raw is not None:
+        try:
+            hpw_val = int(hours_per_week_raw)
+            if hpw_val not in [5, 10, 20]:
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+                }), 400
+            hours_per_week = hpw_val
+        except (ValueError, TypeError):
+            return jsonify({
+                "status": "error",
+                "message": "Invalid study intensity. Supported values are 5, 10, or 20 hours per week."
+            }), 400
+
+    # 4. Resolve user identity: prioritize JWT, fallback to param
+    auth_user_id = get_jwt_identity()
+    user_id = None
+    if auth_user_id:
+        try:
+            user_id = int(auth_user_id)
+        except (ValueError, TypeError):
+            user_id = None
+    elif user_id_param:
+        try:
+            user_id = int(user_id_param)
+        except (ValueError, TypeError):
+            return jsonify({
+                "status": "error",
+                "message": "user_id must be a valid integer"
+            }), 400
+
+    # 5. Run simulation
+    result = CareerSimulatorService.simulate_skill_impact(
+        career_id=career_id,
+        skill_id=skill_id,
+        skill_name=skill_name,
+        simulated_level=simulated_level,
+        user_id=user_id,
+        hours_per_week=hours_per_week
+    )
+
+    if "error" in result:
+        err_code = result["error"]
+        status_code = 404 if err_code in ["CAREER_NOT_FOUND", "SKILL_NOT_FOUND"] else 400
+        return jsonify({
+            "status": "error",
+            "code": err_code,
+            "message": result.get("message", "Simulation failed")
+        }), status_code
+
+    return jsonify({
+        "status": "success",
+        "simulation": result,
+        **result
+    }), 200
+
 

@@ -201,6 +201,20 @@ export const api = {
     return request(`/careers/${careerId}/pathways${query}`);
   },
 
+  simulateSkillImpact: (careerId, options = {}) => {
+    const { skillId, skillName, simulatedLevel, hoursPerWeek = 10, userId = null } = options;
+    return request(`/careers/${careerId}/simulate-skill`, {
+      method: 'POST',
+      body: JSON.stringify({
+        skill_id: skillId,
+        skill_name: skillName,
+        simulated_level: simulatedLevel,
+        hours_per_week: hoursPerWeek,
+        user_id: userId,
+      }),
+    });
+  },
+
   getCareerAnalytics: (careerId) => request(`/careers/${careerId}/analytics`),
 
   getCareerReadinessSummary: (careerId, options = {}) => {

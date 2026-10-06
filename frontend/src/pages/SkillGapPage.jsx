@@ -25,6 +25,10 @@ import {
   Check,
   ChevronRight,
   Info,
+  RotateCcw,
+  TrendingUp,
+  Zap,
+  Sliders,
 } from 'lucide-react';
 
 export function SkillGapPage() {
@@ -41,11 +45,18 @@ export function SkillGapPage() {
   const [selectedPathwayId, setSelectedPathwayId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'gap'); // 'gap' | 'roadmap' | 'pathways'
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'gap'); // 'gap' | 'roadmap' | 'pathways' | 'simulator'
 
   // Module 8.3: Study intensity (5 | 10 | 20 hours/week)
   const [hoursPerWeek, setHoursPerWeek] = useState(10);
   const [updatingTimeline, setUpdatingTimeline] = useState(false);
+
+  // Module 9.4: "What If?" Interactive Skill Simulator State
+  const [simulatorSkill, setSimulatorSkill] = useState('');
+  const [simulatorLevel, setSimulatorLevel] = useState(3);
+  const [simulationResult, setSimulationResult] = useState(null);
+  const [simulating, setSimulating] = useState(false);
+  const [simError, setSimError] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -116,6 +127,54 @@ export function SkillGapPage() {
     }
     setSearchParams(params);
     setTargetCareerId(Number(newId));
+    setSimulationResult(null);
+    setSimError(null);
+  }
+
+  async function handleRunSimulation(targetSkillName = null, targetLevel = null) {
+    const sName = targetSkillName || simulatorSkill;
+    const sLevel = targetLevel !== null ? targetLevel : simulatorLevel;
+    if (!sName) {
+      setSimError('Please select or specify a skill to simulate.');
+      return;
+    }
+    setSimulating(true);
+    setSimError(null);
+    try {
+      const res = await api.simulateSkillImpact(activeCareerId, {
+        skillName: sName,
+        simulatedLevel: sLevel,
+        hoursPerWeek: hoursPerWeek,
+      });
+      if (res?.simulation) {
+        setSimulationResult(res.simulation);
+      } else if (res?.error) {
+        setSimError(res.message || 'Simulation could not be evaluated.');
+      } else {
+        setSimError('Unexpected simulation response.');
+      }
+    } catch (err) {
+      setSimError(err.message || 'Simulation request failed.');
+    } finally {
+      setSimulating(false);
+    }
+  }
+
+  function handleResetSimulation() {
+    setSimulationResult(null);
+    setSimError(null);
+  }
+
+  function handleQuickSimulate(skillName, defaultLevel = 3) {
+    setSimulatorSkill(skillName);
+    setSimulatorLevel(defaultLevel);
+    setActiveTab('simulator');
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set('tab', 'simulator');
+      return p;
+    });
+    handleRunSimulation(skillName, defaultLevel);
   }
 
   const selectedCareer = careers.find((c) => c.id === activeCareerId);
@@ -340,6 +399,29 @@ export function SkillGapPage() {
                 </span>
               ) : null}
             </button>
+            <button
+              onClick={() => {
+                setActiveTab('simulator');
+                setSearchParams((prev) => {
+                  const p = new URLSearchParams(prev);
+                  p.set('tab', 'simulator');
+                  return p;
+                });
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 transition ${
+                activeTab === 'simulator'
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              "What If?" Skill Simulator
+              {simulationResult?.impact?.readiness_gain > 0 ? (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">
+                  +{simulationResult.impact.readiness_gain}%
+                </span>
+              ) : null}
+            </button>
           </div>
 
           {/* TAB 1: Skill Categorization Matrix */}
@@ -392,13 +474,24 @@ export function SkillGapPage() {
                             </p>
                           </div>
 
-                          <Link
-                            to={`/learning?skill_id=${cId}`}
-                            className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-rose-700 hover:text-rose-800 hover:underline"
-                          >
-                            <BookOpen className="w-3.5 h-3.5" />
-                            <span>Find Learning Resources →</span>
-                          </Link>
+                          <div className="mt-3 flex items-center justify-between gap-2 border-t border-rose-100 pt-2.5">
+                            <Link
+                              to={`/learning?skill_id=${cId}`}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-800 hover:underline"
+                            >
+                              <BookOpen className="w-3.5 h-3.5" />
+                              <span>Resources</span>
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickSimulate(sName, Math.min(5, Math.ceil(reqLvl / 2) || 3))}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 hover:text-primary-800 bg-white hover:bg-primary-50 border border-primary-200 px-2 py-1 rounded-lg transition"
+                              title={`Simulate learning ${sName}`}
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-500" />
+                              <span>What-If →</span>
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -453,13 +546,24 @@ export function SkillGapPage() {
                             </p>
                           </div>
 
-                          <Link
-                            to={`/learning?skill_id=${cId}`}
-                            className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 hover:underline"
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            <span>Level-Up Resources →</span>
-                          </Link>
+                          <div className="mt-3 flex items-center justify-between gap-2 border-t border-amber-100 pt-2.5">
+                            <Link
+                              to={`/learning?skill_id=${cId}`}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 hover:underline"
+                            >
+                              <BookOpen className="w-3.5 h-3.5" />
+                              <span>Resources</span>
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickSimulate(sName, Math.min(5, Math.ceil(reqLvl / 2) || 4))}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 hover:text-primary-800 bg-white hover:bg-primary-50 border border-primary-200 px-2 py-1 rounded-lg transition shadow-xs"
+                              title={`Simulate upgrading ${sName}`}
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-500" />
+                              <span>What-If →</span>
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -1243,6 +1347,495 @@ export function SkillGapPage() {
                   </div>
                 );
               })()}
+            </div>
+          )}
+
+          {/* TAB 4: "What If?" Interactive Skill Simulator */}
+          {activeTab === 'simulator' && (
+            <div className="space-y-6">
+              {/* Simulator Header & Safety Callout */}
+              <div className="bg-gradient-to-r from-slate-900 to-indigo-950 rounded-2xl p-6 md:p-8 text-white shadow-md relative overflow-hidden">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+                  <div className="max-w-2xl">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 text-xs font-semibold mb-3">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Phase 9.4 • Interactive Career Simulator</span>
+                    </div>
+                    <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                      "What If I Learn Skill X?"
+                    </h2>
+                    <p className="text-slate-300 text-sm mt-1.5 leading-relaxed">
+                      Model the hypothetical impact of acquiring a missing skill or improving your proficiency in-memory.
+                      Evaluate real-time career readiness gain, study timeline compression, and specialization pathway advancement.
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-start md:items-end gap-2 text-xs">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-medium">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>100% In-Memory Simulation</span>
+                    </div>
+                    <span className="text-slate-400 text-[11px]">
+                      Your permanent student profile remains completely unmodified.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Simulation Controls Card */}
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <span className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                      <Sliders className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">
+                        Simulation Parameters
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Targeting career: <strong className="text-slate-700">{selectedCareer?.title || selectedCareer?.career_name || 'Active Career'}</strong>
+                      </p>
+                    </div>
+                  </div>
+
+                  {simulationResult && (
+                    <button
+                      type="button"
+                      onClick={handleResetSimulation}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset Simulation</span>
+                    </button>
+                  )}
+                </div>
+
+                {simError && <Alert type="error" message={simError} />}
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Skill Picker */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                      <span>1. Select Candidate Skill</span>
+                      {simulatorSkill && (
+                        <span className="text-[11px] font-medium text-primary-600">Selected</span>
+                      )}
+                    </label>
+                    <select
+                      value={simulatorSkill}
+                      onChange={(e) => setSimulatorSkill(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl px-3.5 py-2.5 font-medium transition focus:ring-primary-500 focus:border-primary-500"
+                    >
+                      <option value="">-- Choose a skill to simulate --</option>
+                      {missingSkills?.length > 0 && (
+                        <optgroup label="⚠️ Missing Skills (High Impact)">
+                          {missingSkills.map((s, idx) => (
+                            <option key={`m-${idx}`} value={s.skill_name || s.name}>
+                              {s.skill_name || s.name} (Missing • Req: Lvl {s.required_level || 5}/10)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {weakSkills?.length > 0 && (
+                        <optgroup label="⚡ Weak / Developing Skills">
+                          {weakSkills.map((s, idx) => (
+                            <option key={`w-${idx}`} value={s.skill_name || s.name}>
+                              {s.skill_name || s.name} (Developing • Current: {s.current_proficiency || 0}/10)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {matchedSkills?.length > 0 && (
+                        <optgroup label="✓ Matched Competencies">
+                          {matchedSkills.map((s, idx) => (
+                            <option key={`mt-${idx}`} value={s.skill_name || s.name}>
+                              {s.skill_name || s.name} (Satisfied)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+
+                    <div className="pt-1">
+                      <input
+                        type="text"
+                        placeholder="Or type any custom or canonical skill name..."
+                        value={simulatorSkill}
+                        onChange={(e) => setSimulatorSkill(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-lg px-3 py-2 transition focus:ring-primary-500 focus:border-primary-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Target Proficiency Selector */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                      <span>2. Simulated Mastery Level</span>
+                      <span className="text-xs font-extrabold text-primary-700">
+                        Level {simulatorLevel}/5 ({simulatorLevel * 2}/10)
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 3, 4, 5].map((lvl) => {
+                        const labels = ['Beginner', 'Elementary', 'Intermediate', 'Advanced', 'Expert'];
+                        const isSelected = Number(simulatorLevel) === lvl;
+                        return (
+                          <button
+                            key={lvl}
+                            type="button"
+                            onClick={() => setSimulatorLevel(lvl)}
+                            className={`p-2.5 rounded-xl border flex flex-col items-center justify-center text-center transition ${
+                              isSelected
+                                ? 'bg-primary-50 border-primary-500 text-primary-900 shadow-xs ring-1 ring-primary-500'
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
+                            }`}
+                          >
+                            <span className="text-sm font-extrabold">{lvl}</span>
+                            <span className="text-[9px] font-medium leading-tight mt-0.5">{labels[lvl - 1]}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Standard industry career requirement levels range from 1 (fundamental) to 5 (lead/expert).
+                    </p>
+                  </div>
+
+                  {/* Study Intensity & Trigger */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                      <span>3. Weekly Study Intensity</span>
+                      <span className="text-xs font-extrabold text-primary-700">{hoursPerWeek} hrs/week</span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[5, 10, 20].map((hrs) => (
+                        <button
+                          key={hrs}
+                          type="button"
+                          onClick={() => handleIntensityChange(hrs)}
+                          className={`p-2.5 rounded-xl border text-center transition ${
+                            hoursPerWeek === hrs
+                              ? 'bg-primary-50 border-primary-500 text-primary-900 shadow-xs font-bold'
+                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-medium'
+                          }`}
+                        >
+                          <div className="text-xs font-bold">{hrs}h / wk</div>
+                          <div className="text-[9px] text-slate-400">
+                            {hrs === 5 ? 'Light' : hrs === 10 ? 'Balanced' : 'Intensive'}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRunSimulation()}
+                        disabled={simulating || !simulatorSkill}
+                        className="w-full flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-bold py-2.5 px-4 rounded-xl shadow-sm transition"
+                      >
+                        {simulating ? (
+                          <>
+                            <Spinner size="sm" />
+                            <span>Computing In-Memory Delta...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4 text-amber-300" />
+                            <span>Simulate Skill Impact</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Simulation Result Presentation */}
+              {simulationResult ? (
+                <div className="space-y-6">
+                  {/* Executive Narrative Callout */}
+                  <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-6 shadow-xs">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-xs shrink-0">
+                        <TrendingUp className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-base font-extrabold text-indigo-950">
+                            Simulation Outcome: {simulationResult.skill.name} at Level {simulationResult.skill.simulated_level}/5
+                          </h4>
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            simulationResult.skill.is_required_by_career
+                              ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                          }`}>
+                            {simulationResult.skill.is_required_by_career ? 'Career Competency' : 'Elective / Non-Core'}
+                          </span>
+                          {simulationResult.impact.readiness_gain > 0 && (
+                            <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              +{simulationResult.impact.readiness_gain}% Overall Readiness Gain
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-indigo-900/90 leading-relaxed font-medium">
+                          {simulationResult.explanation}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3 Metric Differential Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Readiness Differential */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Readiness Score</span>
+                          <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${
+                            simulationResult.impact.readiness_gain > 0
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            +{simulationResult.impact.readiness_gain}% Gain
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2 mt-1">
+                          <span className="text-2xl font-extrabold text-slate-400 line-through">
+                            {simulationResult.current_state.readiness_percentage}%
+                          </span>
+                          <ArrowRight className="w-4 h-4 text-slate-400" />
+                          <span className="text-3xl font-black text-slate-900">
+                            {simulationResult.simulated_state.readiness_percentage}%
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 flex justify-between">
+                        <span>Matched: {simulationResult.simulated_state.matched_skills_count}</span>
+                        <span>Developing: {simulationResult.simulated_state.weak_skills_count}</span>
+                      </div>
+                    </div>
+
+                    {/* Missing Skills Differential */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Missing Competencies</span>
+                          <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                            {simulationResult.current_state.missing_skills_count - simulationResult.simulated_state.missing_skills_count > 0
+                              ? `-${simulationResult.current_state.missing_skills_count - simulationResult.simulated_state.missing_skills_count} Missing`
+                              : 'No Count Delta'}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2 mt-1">
+                          <span className="text-2xl font-extrabold text-slate-400">
+                            {simulationResult.current_state.missing_skills_count}
+                          </span>
+                          <ArrowRight className="w-4 h-4 text-slate-400" />
+                          <span className="text-3xl font-black text-slate-900">
+                            {simulationResult.simulated_state.missing_skills_count}
+                          </span>
+                          <span className="text-xs text-slate-400 font-medium">remaining</span>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
+                        {simulationResult.impact.newly_satisfied_skills.length > 0
+                          ? `${simulationResult.impact.newly_satisfied_skills.length} competency newly satisfied`
+                          : 'No new competencies fully satisfied'}
+                      </div>
+                    </div>
+
+                    {/* Study Timeline Differential */}
+                    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Estimated Timeline</span>
+                          <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${
+                            simulationResult.impact.weeks_saved > 0
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {simulationResult.impact.weeks_saved > 0
+                              ? `-${simulationResult.impact.weeks_saved} Weeks Saved`
+                              : 'Timeline Unchanged'}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2 mt-1">
+                          <span className="text-2xl font-extrabold text-slate-400 line-through">
+                            {simulationResult.current_state.estimated_weeks}w
+                          </span>
+                          <ArrowRight className="w-4 h-4 text-slate-400" />
+                          <span className="text-3xl font-black text-slate-900">
+                            {simulationResult.simulated_state.estimated_weeks}w
+                          </span>
+                          <span className="text-xs text-slate-400 font-medium">
+                            ({simulationResult.simulated_state.estimated_total_hours} hrs)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 flex justify-between">
+                        <span>Pace: {hoursPerWeek} hrs/week</span>
+                        <span>Saved: {simulationResult.impact.hours_saved} study hrs</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Newly Satisfied Skills & Cross-Pathway Impacts */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Newly Satisfied Competencies */}
+                    <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+                      <div className="flex items-center gap-2 text-emerald-700">
+                        <CheckCircle2 className="w-5 h-5" />
+                        <h4 className="text-sm font-bold uppercase tracking-wider">Newly Satisfied Competencies</h4>
+                      </div>
+
+                      {simulationResult.impact.newly_satisfied_skills.length === 0 ? (
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                          {simulationResult.skill.is_required_by_career
+                            ? 'This simulation narrowed your gap or demonstrated mastery, but did not transition any skill from missing/weak to fully matched.'
+                            : 'This skill is not a required competency for this role, so no career requirements changed status.'}
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {simulationResult.impact.newly_satisfied_skills.map((s, idx) => (
+                            <div
+                              key={idx}
+                              className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 flex items-center justify-between"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="p-1 rounded-full bg-emerald-100 text-emerald-700">
+                                  <Check className="w-3.5 h-3.5" />
+                                </span>
+                                <div>
+                                  <span className="font-bold text-sm text-slate-900">{s.skill_name}</span>
+                                  <p className="text-[11px] text-slate-500">
+                                    Promoted from <span className="font-semibold">{s.previous_status}</span> to <span className="font-semibold text-emerald-700">{s.simulated_status}</span>
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-800">
+                                Matched
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Module 9.3 Specialization Track Impacts */}
+                    <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-primary-700">
+                          <GitBranch className="w-5 h-5" />
+                          <h4 className="text-sm font-bold uppercase tracking-wider">Specialization Track Impacts</h4>
+                        </div>
+                        <span className="text-[11px] text-slate-400">Module 9.3 Pathways</span>
+                      </div>
+
+                      {(!simulationResult.impact.pathway_impacts || simulationResult.impact.pathway_impacts.length === 0) ? (
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                          No distinct specialization tracks configured for this career track.
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                          {simulationResult.impact.pathway_impacts.map((p, idx) => (
+                            <div
+                              key={idx}
+                              className={`p-3.5 rounded-xl border transition ${
+                                p.readiness_gain > 0
+                                  ? 'border-indigo-200 bg-indigo-50/30'
+                                  : 'border-slate-200 bg-slate-50/50'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <div>
+                                  <h5 className="font-bold text-xs text-slate-900">{p.pathway_name}</h5>
+                                  <p className="text-[10px] text-slate-500">{p.specialization_focus}</p>
+                                </div>
+                                <div className="text-right">
+                                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                                    p.readiness_gain > 0
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    +{p.readiness_gain}%
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px] text-slate-600 pt-1.5 border-t border-slate-200/50">
+                                <span>
+                                  Readiness: <strong>{p.current_readiness}%</strong> ➔ <strong>{p.simulated_readiness}%</strong>
+                                </span>
+                                <span>
+                                  {p.weeks_saved > 0 ? `Saved ${p.weeks_saved} wks` : `${p.simulated_weeks} wks`} ({p.simulated_effort_tier})
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Remaining Gaps After Simulation */}
+                  {simulationResult.impact.remaining_gaps?.length > 0 && (
+                    <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-slate-600" />
+                          Remaining Competencies to Bridge ({simulationResult.impact.remaining_gaps.length})
+                        </h4>
+                        <span className="text-xs text-slate-500">
+                          Sorted by priority for {simulationResult.career_title}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {simulationResult.impact.remaining_gaps.map((gap, idx) => (
+                          <div
+                            key={idx}
+                            className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between"
+                          >
+                            <div className="flex items-start justify-between gap-1 mb-1">
+                              <span className="font-bold text-xs text-slate-900">{gap.skill_name}</span>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                gap.status === 'MISSING' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {gap.status}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-200/50">
+                              <span>Req: Level {gap.required_level}/5</span>
+                              <button
+                                type="button"
+                                onClick={() => handleQuickSimulate(gap.skill_name, gap.required_level || 3)}
+                                className="text-primary-700 hover:text-primary-800 font-semibold text-[10px]"
+                              >
+                                Simulate Next →
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Empty Prompt State when no simulation run yet */
+                <div className="bg-white rounded-2xl p-10 border border-slate-200 text-center space-y-4">
+                  <div className="inline-flex p-3 rounded-full bg-primary-50 text-primary-600">
+                    <Sparkles className="w-8 h-8 text-amber-500" />
+                  </div>
+                  <h4 className="text-base font-bold text-slate-900">
+                    Ready to Explore What-If Scenarios?
+                  </h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                    Choose any skill above and target mastery level to compute how your career readiness
+                    and study completion date would change. You can also click "What-If" on any skill card
+                    in the Skill Categorization Matrix.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </>

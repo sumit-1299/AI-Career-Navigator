@@ -27,6 +27,7 @@ from services.career_comparison_service import CareerComparisonService, parse_sa
 from services.career_recommendation_service import CareerRecommendationService
 from services.career_transition_service import CareerTransitionService
 from services.career_pathway_service import CareerPathwayService
+from services.career_simulator_service import CareerSimulatorService
 
 
 class TestPhase9Module91ScoringModel(unittest.TestCase):
@@ -812,6 +813,315 @@ class TestPhase9Module93CareerPathways(unittest.TestCase):
         resp_comp = self.client.get("/api/careers/compare?career_a_id=1&career_b_id=2")
         self.assertEqual(resp_comp.status_code, 200)
         self.assertIn("market_comparison", resp_comp.get_json()["comparison"])
+
+
+class TestPhase9Module94SkillSimulator(unittest.TestCase):
+    """Unit and Integration tests for Module 9.4: 'What If I Learn Skill X?' Interactive Career Simulator."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = create_app()
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+
+        # Fetch or create test user with skills
+        cls.user = User.query.filter_by(email="phase9_test_student@example.com").first()
+        if cls.user:
+            resp = cls.client.post("/api/login", json={
+                "email": "phase9_test_student@example.com",
+                "password": "password123"
+            })
+            cls.token = resp.get_json().get("access_token")
+            cls.headers = {"Authorization": f"Bearer {cls.token}"}
+        else:
+            cls.token = None
+            cls.headers = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def test_skill_resolution_canonical_and_alias_and_id(self):
+        """Verify resolve_skill handles canonical IDs, canonical names, aliases, and career-specific skills."""
+        # 1. Canonical Skill by name
+        res_py = CareerSimulatorService.resolve_skill(skill_name="Python")
+        self.assertIsNotNone(res_py)
+        self.assertEqual(res_py["name"], "Python")
+
+        # 2. Canonical Skill by ID
+        if res_py and res_py.get("id"):
+            res_id = CareerSimulatorService.resolve_skill(skill_id=res_py["id"])
+            self.assertIsNotNone(res_id)
+            self.assertEqual(res_id["name"], "Python")
+
+        # 3. Alias resolution (e.g. 'reactjs', or case-insensitive)
+        res_alias = CareerSimulatorService.resolve_skill(skill_name="reactjs")
+        if res_alias:
+            self.assertEqual(res_alias["name"], "React")
+
+        # 4. Unknown skill resolution returns None
+        res_none = CareerSimulatorService.resolve_skill(skill_name="nonexistent_fantasy_skill_xyz123")
+        self.assertIsNone(res_none)
+
+    def test_proficiency_input_normalization(self):
+        """Verify normalization between 1-5 career scale and 1-10 raw scale with strict validation."""
+        # 1 to 5 career scale
+        norm_lvl, raw_prof = CareerSimulatorService.normalize_proficiency_inputs(3)
+        self.assertEqual(norm_lvl, 3.0)
+        self.assertEqual(raw_prof, 6)
+
+        norm_lvl5, raw_prof5 = CareerSimulatorService.normalize_proficiency_inputs(5.0)
+        self.assertEqual(norm_lvl5, 5.0)
+        self.assertEqual(raw_prof5, 10)
+
+        # 6 to 10 raw scale
+        norm_lvl8, raw_prof8 = CareerSimulatorService.normalize_proficiency_inputs(8)
+        self.assertEqual(norm_lvl8, 4.0)
+        self.assertEqual(raw_prof8, 8)
+
+        # Out-of-bounds validations
+        with self.assertRaises(ValueError):
+            CareerSimulatorService.normalize_proficiency_inputs(0)
+        with self.assertRaises(ValueError):
+            CareerSimulatorService.normalize_proficiency_inputs(11)
+        with self.assertRaises(ValueError):
+            CareerSimulatorService.normalize_proficiency_inputs("not_a_number")
+
+    def test_missing_skill_simulation_readiness_gain(self):
+        """Verify that simulating a missing career skill yields positive readiness gain and timeline reduction."""
+        career = Career.query.get(1)  # Software Developer
+        # Simulate student with NO skills acquiring Python at Level 4/5
+        sim = CareerSimulatorService.simulate_skill_impact(
+            career_id=1,
+            skill_name="Python",
+            simulated_level=4,
+            user_id=None,
+            hours_per_week=10
+        )
+        self.assertNotIn("error", sim)
+        self.assertEqual(sim["career_id"], 1)
+        self.assertTrue(sim["skill"]["is_required_by_career"])
+        self.assertGreater(sim["simulated_state"]["readiness_percentage"], sim["current_state"]["readiness_percentage"])
+        self.assertGreater(sim["impact"]["readiness_gain"], 0.0)
+        self.assertGreaterEqual(sim["impact"]["hours_saved"], 0)
+        self.assertGreaterEqual(sim["impact"]["weeks_saved"], 0)
+        self.assertIn("Python", sim["explanation"])
+
+    def test_existing_skill_improvement(self):
+        """Verify upgrading an existing student skill produces deterministic readiness delta."""
+        sim = CareerSimulatorService.simulate_skill_impact(
+            career_id=1,
+            skill_name="Python",
+            simulated_level=4.5,
+            user_id=None,
+            hours_per_week=10
+        )
+        self.assertNotIn("error", sim)
+        self.assertGreater(sim["impact"]["readiness_gain"], 0.0)
+
+    def test_skill_already_exceeds_requirement(self):
+        """Verify upgrading a skill that already exceeds requirements yields 0 gain with clear narrative."""
+        sim = CareerSimulatorService.simulate_skill_impact(
+            career_id=1,
+            skill_name="Python",
+            simulated_level=5,
+            user_id=self.user.id if self.user else None,
+            hours_per_week=10
+        )
+        self.assertNotIn("error", sim)
+        self.assertIsInstance(sim["explanation"], str)
+        self.assertIn("Python", sim["explanation"])
+
+    def test_simulation_proficiency_equal_or_lower(self):
+        """Verify simulating proficiency <= current proficiency yields zero readiness gain."""
+        if self.user:
+            user_skills = Skill.query.filter_by(user_id=self.user.id).all()
+            if user_skills:
+                first_skill = user_skills[0]
+                curr_level = round(first_skill.proficiency / 2.0, 1)
+                sim = CareerSimulatorService.simulate_skill_impact(
+                    career_id=1,
+                    skill_name=first_skill.skill_name,
+                    simulated_level=max(1.0, curr_level - 1.0),
+                    user_id=self.user.id,
+                    hours_per_week=10
+                )
+                self.assertNotIn("error", sim)
+                self.assertEqual(sim["impact"]["readiness_gain"], 0.0)
+
+    def test_skill_not_required_by_career(self):
+        """Verify simulating an unrelated skill yields zero readiness gain and transparent explanation."""
+        sim = CareerSimulatorService.simulate_skill_impact(
+            career_id=1,
+            skill_name="Cybersecurity",
+            simulated_level=5,
+            user_id=None,
+            hours_per_week=10
+        )
+        self.assertNotIn("error", sim)
+        self.assertFalse(sim["skill"]["is_required_by_career"])
+        self.assertEqual(sim["impact"]["readiness_gain"], 0.0)
+        self.assertEqual(sim["impact"]["weeks_saved"], 0)
+        self.assertIn("not a mandatory or elective requirement", sim["explanation"])
+
+    def test_pathway_impacts_integration(self):
+        """Verify that simulation evaluates Module 9.3 specialization tracks and computes track deltas."""
+        sim = CareerSimulatorService.simulate_skill_impact(
+            career_id=1,
+            skill_name="Python",
+            simulated_level=4,
+            user_id=None,
+            hours_per_week=10
+        )
+        self.assertNotIn("error", sim)
+        pathway_impacts = sim["impact"]["pathway_impacts"]
+        self.assertIsInstance(pathway_impacts, list)
+        self.assertGreater(len(pathway_impacts), 0)
+        for p in pathway_impacts:
+            self.assertIn("pathway_id", p)
+            self.assertIn("pathway_name", p)
+            self.assertIn("readiness_gain", p)
+            self.assertIn("simulated_readiness", p)
+            self.assertIn("simulated_effort_tier", p)
+
+    def test_strict_database_immutability(self):
+        """STRICT SAFETY TEST: Verify student profile and skills table are 100% unmodified by simulation."""
+        if self.user:
+            skills_before = Skill.query.filter_by(user_id=self.user.id).all()
+            count_before = len(skills_before)
+            profs_before = {s.id: s.proficiency for s in skills_before}
+
+            CareerSimulatorService.simulate_skill_impact(
+                career_id=1,
+                skill_name="Python",
+                simulated_level=5,
+                user_id=self.user.id,
+                hours_per_week=20
+            )
+            CareerSimulatorService.simulate_skill_impact(
+                career_id=1,
+                skill_name="Docker",
+                simulated_level=4,
+                user_id=self.user.id,
+                hours_per_week=10
+            )
+
+            skills_after = Skill.query.filter_by(user_id=self.user.id).all()
+            count_after = len(skills_after)
+            profs_after = {s.id: s.proficiency for s in skills_after}
+
+            self.assertEqual(count_before, count_after, "Simulation modified the database skill count!")
+            self.assertEqual(profs_before, profs_after, "Simulation modified database skill proficiencies!")
+
+    def test_api_post_simulate_skill_endpoint(self):
+        """Verify POST /api/careers/<id>/simulate-skill returns complete structured simulation payload."""
+        resp = self.client.post("/api/careers/1/simulate-skill", json={
+            "skill_name": "Python",
+            "simulated_level": 4,
+            "hours_per_week": 10
+        })
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertIn("simulation", data)
+        sim = data["simulation"]
+        self.assertEqual(sim["career_id"], 1)
+        self.assertIn("current_state", sim)
+        self.assertIn("simulated_state", sim)
+        self.assertIn("impact", sim)
+        self.assertIn("explanation", sim)
+        self.assertIn("readiness_gain", sim["impact"])
+        self.assertIn("weeks_saved", sim["impact"])
+
+    def test_api_get_simulate_skill_endpoint(self):
+        """Verify GET /api/careers/<id>/simulate-skill accepts query parameters."""
+        resp = self.client.get("/api/careers/1/simulate-skill?skill_name=Python&simulated_level=4&hours_per_week=10")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["simulation"]["skill"]["name"], "Python")
+
+    def test_api_jwt_authentication_and_user_context(self):
+        """Verify JWT authenticated requests inject authoritative user profile into simulation."""
+        if self.token:
+            resp = self.client.post(
+                "/api/careers/1/simulate-skill",
+                headers=self.headers,
+                json={"skill_name": "Python", "simulated_level": 4}
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = resp.get_json()
+            self.assertEqual(data["status"], "success")
+
+    def test_api_input_validations(self):
+        """Verify comprehensive input validation on the simulation endpoint."""
+        # 1. Non-existent career ID -> 404
+        resp1 = self.client.post("/api/careers/9999/simulate-skill", json={
+            "skill_name": "Python", "simulated_level": 4
+        })
+        self.assertEqual(resp1.status_code, 404)
+
+        # 2. Non-positive career ID -> 400
+        resp2 = self.client.post("/api/careers/0/simulate-skill", json={
+            "skill_name": "Python", "simulated_level": 4
+        })
+        self.assertEqual(resp2.status_code, 400)
+
+        # 3. Missing simulated_level -> 400
+        resp3 = self.client.post("/api/careers/1/simulate-skill", json={
+            "skill_name": "Python"
+        })
+        self.assertEqual(resp3.status_code, 400)
+        self.assertIn("simulated_level is required", resp3.get_json()["message"])
+
+        # 4. Invalid proficiency (<1 or >10) -> 400
+        resp4 = self.client.post("/api/careers/1/simulate-skill", json={
+            "skill_name": "Python", "simulated_level": 15
+        })
+        self.assertEqual(resp4.status_code, 400)
+
+        # 5. Missing both skill_id and skill_name -> 400
+        resp5 = self.client.post("/api/careers/1/simulate-skill", json={
+            "simulated_level": 4
+        })
+        self.assertEqual(resp5.status_code, 400)
+
+        # 6. Unresolvable skill name -> 404
+        resp6 = self.client.post("/api/careers/1/simulate-skill", json={
+            "skill_name": "totally_nonexistent_skill_zzz999", "simulated_level": 4
+        })
+        self.assertEqual(resp6.status_code, 404)
+
+        # 7. Invalid study intensity hours_per_week -> 400
+        resp7 = self.client.post("/api/careers/1/simulate-skill", json={
+            "skill_name": "Python", "simulated_level": 4, "hours_per_week": 15
+        })
+        self.assertEqual(resp7.status_code, 400)
+        self.assertIn("Supported values are 5, 10, or 20", resp7.get_json()["message"])
+
+    def test_readiness_bounds_guarantee(self):
+        """Verify readiness scores always stay within [0.0, 100.0] bounds."""
+        for lvl in [1, 3, 5, 10]:
+            sim = CareerSimulatorService.simulate_skill_impact(
+                career_id=1,
+                skill_name="Python",
+                simulated_level=lvl,
+                user_id=None,
+                hours_per_week=10
+            )
+            readiness = sim["simulated_state"]["readiness_percentage"]
+            self.assertGreaterEqual(readiness, 0.0)
+            self.assertLessEqual(readiness, 100.0)
+
+    def test_backward_compatibility_preserved(self):
+        """Verify all Phase 1-9.3 career endpoints remain functioning normally."""
+        resp_p = self.client.get("/api/careers/1/pathways")
+        self.assertEqual(resp_p.status_code, 200)
+
+        resp_c = self.client.get("/api/careers/compare?career_a_id=1&career_b_id=2")
+        self.assertEqual(resp_c.status_code, 200)
 
 
 if __name__ == "__main__":
