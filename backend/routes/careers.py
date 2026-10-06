@@ -447,11 +447,20 @@ def get_career_analytics(career_id):
     - Requires user identification via JWT or query parameter ?user_id=<id>.
     - Returns baseline vs current readiness, improvement, velocity, timeline, and remaining gaps.
     """
-    user_id = get_jwt_identity()
-    if not user_id:
-        param_user = request.args.get("user_id", type=int)
-        if param_user:
-            user_id = str(param_user)
+    jwt_user = get_jwt_identity()
+    user_id = str(jwt_user) if jwt_user is not None else None
+    param_user = request.args.get("user_id", type=int)
+
+    if jwt_user is not None and param_user is not None:
+        # Prevent IDOR: Authenticated user cannot request another user's analytics
+        if str(jwt_user) != str(param_user):
+            return jsonify({
+                "status": "error",
+                "message": "Forbidden: user_id parameter does not match authenticated token"
+            }), 403
+
+    if not user_id and param_user:
+        user_id = str(param_user)
 
     if not user_id:
         return jsonify({
