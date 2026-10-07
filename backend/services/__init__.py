@@ -27,6 +27,7 @@ from services.recommendation_evaluation_service import (
     RecommendationEvaluationService,
     EvaluationSkill,
 )
+from services.job_action_center_service import JobActionCenterService
 
 __all__ = [
     "SkillGapService",
@@ -48,4 +49,5 @@ __all__ = [
     "InterviewSimulationService",
     "RecommendationEvaluationService",
     "EvaluationSkill",
+    "JobActionCenterService",
 ]

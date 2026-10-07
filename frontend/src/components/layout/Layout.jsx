@@ -5,6 +5,7 @@ import {
   Compass,
   LayoutDashboard,
   Briefcase,
+  Search,
   Target,
   Sparkles,
   BookOpen,
@@ -25,6 +26,7 @@ export function Layout() {
   const navLinks = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/careers', label: 'Careers', icon: Briefcase },
+    { to: '/jobs', label: 'Job Opportunities', icon: Search },
     { to: '/skill-gap', label: 'Skill Gap & Roadmap', icon: Target },
     { to: '/skills', label: 'My Skills', icon: Sparkles },
     { to: '/learning', label: 'Learning Pathways', icon: BookOpen },

@@ -11,6 +11,7 @@ import { LearningPage } from './pages/LearningPage';
 import { ResumePage } from './pages/ResumePage';
 import { CareerComparisonPage } from './pages/CareerComparisonPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
+import { JobOpportunityPage } from './pages/JobOpportunityPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -23,6 +24,7 @@ export function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<DashboardPage />} />
             <Route path="careers" element={<CareersPage />} />
+            <Route path="jobs" element={<JobOpportunityPage />} />
             <Route path="skill-gap" element={<SkillGapPage />} />
             <Route path="skills" element={<SkillsPage />} />
             <Route path="learning" element={<LearningPage />} />

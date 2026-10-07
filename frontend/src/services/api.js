@@ -338,4 +338,60 @@ export const api = {
 
   getSkillProgress: (skillId) =>
     request(`/skills/canonical/${skillId}/progress`),
+
+  // Live Job Opportunities & Career Action Center
+  listLiveJobs: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.q || params.query) q.append('q', params.q || params.query);
+    if (params.location) q.append('location', params.location);
+    if (params.work_mode) q.append('work_mode', params.work_mode);
+    if (params.experience) q.append('experience', params.experience);
+    if (params.technology || params.tech) q.append('technology', params.technology || params.tech);
+    if (params.provider) q.append('provider', params.provider);
+    if (params.source_key) q.append('source_key', params.source_key);
+    if (params.page) q.append('page', params.page);
+    if (params.page_size) q.append('page_size', params.page_size);
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+    return request(`/jobs${queryString}`);
+  },
+
+  getLiveJobSources: () => request('/jobs/sources'),
+
+  getLiveJobDetails: (sourceKey, providerId) =>
+    request(`/jobs/${encodeURIComponent(sourceKey)}/${encodeURIComponent(providerId)}`),
+
+  matchLiveJob: (sourceKey, providerId, payload = {}) =>
+    request(`/jobs/${encodeURIComponent(sourceKey)}/${encodeURIComponent(providerId)}/match`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  matchCustomJob: (payload) =>
+    request('/jobs/match-custom', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getJobActionCenter: (sourceKey, providerId, options = {}) => {
+    const { fromCareerId = null, skills = null } = options;
+    const q = new URLSearchParams();
+    if (fromCareerId) q.append('from_career_id', fromCareerId);
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+
+    if (skills && Array.isArray(skills)) {
+      return request(`/jobs/${encodeURIComponent(sourceKey)}/${encodeURIComponent(providerId)}/action-center${queryString}`, {
+        method: 'POST',
+        body: JSON.stringify({ skills }),
+      });
+    }
+    return request(`/jobs/${encodeURIComponent(sourceKey)}/${encodeURIComponent(providerId)}/action-center${queryString}`);
+  },
+
+  getSqlDiagnostic: () => request('/jobs/diagnostics/sql'),
+
+  evaluateSqlDiagnostic: (answers) =>
+    request('/jobs/diagnostics/sql/evaluate', {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    }),
 };

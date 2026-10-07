@@ -131,6 +131,51 @@ def match_job(source_key, provider_id):
     return jsonify(match_result), 200
 
 
+@jobs_bp.route("/<source_key>/<path:provider_id>/action-center", methods=["GET", "POST"])
+def get_job_action_center(source_key, provider_id):
+    """Retrieve synthesized Career Action Center intelligence for a specific live job."""
+    if source_key not in LiveJobsService.get_source_registry():
+        return jsonify({"status": "error", "message": f"Source '{source_key}' not found"}), 404
+
+    payload = request.get_json(silent=True) if request.method == "POST" else {}
+    if not payload and request.args:
+        payload = request.args.to_dict()
+
+    skills = _resolve_user_skills(payload)
+
+    # Resolve user identity if authenticated
+    user_id = None
+    try:
+        verify_jwt_in_request(optional=True)
+        identity = get_jwt_identity()
+        if identity:
+            user_id = int(identity)
+    except Exception:
+        pass
+
+    from_career_id = request.args.get("from_career_id", type=int)
+    if not from_career_id and payload:
+        try:
+            from_career_id = int(payload.get("from_career_id"))
+        except (ValueError, TypeError):
+            from_career_id = None
+
+    from services.job_action_center_service import JobActionCenterService
+    result = JobActionCenterService.get_action_center(
+        source_key=source_key,
+        provider_id=provider_id,
+        user_id=user_id,
+        custom_skills=skills if skills else None,
+        from_career_id=from_career_id,
+    )
+
+    if result.get("status") == "error":
+        status_code = 404 if result.get("error") == "NOT_FOUND" else 400
+        return jsonify(result), status_code
+
+    return jsonify(result), 200
+
+
 @jobs_bp.route("/match-custom", methods=["POST"])
 def match_custom_job():
     """Match candidate skills against any custom/pasted job description."""
