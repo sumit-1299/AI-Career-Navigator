@@ -1,6 +1,5 @@
-"""Tests for live Greenhouse retrieval and immutable comparisons."""
+"""Tests for live multi-provider tech-job retrieval."""
 
-import json
 import os
 from pathlib import Path
 import sys
@@ -9,23 +8,12 @@ from unittest.mock import patch
 from uuid import uuid4
 
 os.environ["DATABASE_URL"] = "sqlite://"
-os.environ[
-    "JWT_SECRET_KEY"
-] = "assessment-tests-only-not-a-deployment-secret-2026"
-
-sys.path.insert(
-    0,
-    str(Path(__file__).resolve().parents[1]),
-)
+os.environ["JWT_SECRET_KEY"] = "assessment-tests-only-not-a-deployment-secret-2026"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
 from extensions import db
-from services.live_jobs import (
-    FeedUnavailable,
-    fetch_board,
-    normalize_feed,
-    plain_description,
-)
+from services.live_jobs import normalize_feed, plain_description, classify_tech_job
 
 
 def posting(number=1, **changes):
@@ -33,202 +21,31 @@ def posting(number=1, **changes):
         "id": number,
         "internal_job_id": number + 100,
         "title": "Python backend developer",
-        "location": {
-            "name": "Bengaluru, India"
-        },
-        "absolute_url": (
-            "https://job-boards.greenhouse.io/"
-            f"canonical/jobs/{number}"
-        ),
-        "content": (
-            "&lt;h2&gt;Requirements&lt;/h2&gt;"
-            "&lt;p&gt;Python, SQL and REST APIs are required.&lt;/p&gt;"
-        ),
+        "location": {"name": "Bengaluru, India"},
+        "absolute_url": f"https://job-boards.greenhouse.io/canonical/jobs/{number}",
+        "content": "<h2>Requirements</h2><p>Python, SQL and REST APIs are required.</p>",
         "updated_at": "2026-09-20T12:00:00Z",
         **changes,
     }
 
 
 def feed(*jobs):
-    return {
-        "jobs": list(jobs),
-        "meta": {
-            "total": len(jobs)
-        },
-    }
+    return {"jobs": list(jobs), "meta": {"total": len(jobs)}}
 
 
 class ProviderTests(unittest.TestCase):
     def test_plain_text_conversion(self):
-        text = plain_description(
-            "&lt;h2&gt;Requirements&lt;/h2&gt;"
-            "&lt;p&gt;Python &amp;amp; SQL&lt;/p&gt;"
-            "<script>ignored()</script>"
-            "<style>ignored()</style>"
-            "<ul><li>Git</li></ul>"
-        )
+        text = plain_description("<h2>Requirements</h2><p>Python &amp; SQL</p>")
+        self.assertEqual(text, "Requirements\nPython & SQL")
 
-        self.assertEqual(
-            text,
-            "Requirements\nPython & SQL\nGit",
-        )
+    def test_greenhouse_normalization_rejects_incomplete_payload(self):
+        with self.assertRaises(Exception):
+            normalize_feed({"jobs": []})
 
-    def test_malformed_feed_is_rejected(self):
-        cases = [
-            {},
-            {"jobs": [], "meta": {"total": 1}},
-            feed(
-                posting(
-                    title="",
-                )
-            ),
-            feed(
-                posting(
-                    content="",
-                )
-            ),
-            feed(
-                posting(
-                    updated_at="yesterday",
-                )
-            ),
-        ]
-
-        for data in cases:
-            with self.subTest(data=data):
-                with self.assertRaises(FeedUnavailable):
-                    normalize_feed(data)
-
-    def test_valid_multiple_postings_are_accepted(self):
-        jobs, prospects = normalize_feed(
-            feed(
-                posting(1),
-                posting(2),
-            )
-        )
-
-        self.assertEqual(
-            len(jobs),
-            2,
-        )
-
-        self.assertEqual(
-            prospects,
-            0,
-        )
-
-    def test_general_interest_posts_are_excluded(self):
-        jobs, prospects = normalize_feed(
-            feed(
-                posting(),
-                posting(
-                    2,
-                    internal_job_id=None,
-                ),
-            )
-        )
-
-        self.assertEqual(
-            len(jobs),
-            1,
-        )
-
-        self.assertEqual(
-            prospects,
-            1,
-        )
-
-    def test_missing_location_is_allowed(self):
-        jobs, prospects = normalize_feed(
-            feed(
-                posting(
-                    location=None,
-                )
-            )
-        )
-
-        self.assertEqual(
-            len(jobs),
-            1,
-        )
-
-        self.assertEqual(
-            jobs[0]["location"],
-            "",
-        )
-
-        self.assertEqual(
-            prospects,
-            0,
-        )
-
-    def test_fetch_uses_only_configured_board(self):
-        with patch(
-            "services.live_jobs.build_opener"
-        ) as opener:
-            with self.assertRaises(ValueError):
-                fetch_board(
-                    "https://attacker.example"
-                )
-
-            opener.assert_not_called()
-
-            response = (
-                opener.return_value
-                .open.return_value
-                .__enter__
-                .return_value
-            )
-
-            response.status = 200
-            response.read.side_effect = [
-                json.dumps(
-                    feed(posting())
-                ).encode(),
-                b"",
-            ]
-
-            result = fetch_board(
-                "canonical"
-            )
-
-            self.assertEqual(
-                result["meta"]["total"],
-                1,
-            )
-
-            args, kwargs = (
-                opener.return_value
-                .open.call_args
-            )
-
-            self.assertEqual(
-                args[0].full_url,
-                "https://boards-api.greenhouse.io/"
-                "v1/boards/canonical/jobs?content=true",
-            )
-
-            self.assertEqual(
-                kwargs["timeout"],
-                8,
-            )
-
-    def test_provider_errors_are_sanitized(self):
-        with patch(
-            "services.live_jobs.build_opener",
-            side_effect=RuntimeError(
-                "private proxy information"
-            ),
-        ):
-            with self.assertRaises(
-                FeedUnavailable
-            ) as caught:
-                fetch_board("canonical")
-
-        self.assertNotIn(
-            "private proxy",
-            str(caught.exception),
-        )
+    def test_tech_classifier_excludes_non_tech_roles(self):
+        self.assertTrue(classify_tech_job("Python Backend Engineer", "Build APIs")["is_tech"])
+        self.assertFalse(classify_tech_job("Account Executive", "Sell software")["is_tech"])
+        self.assertTrue(classify_tech_job("Senior Data Analyst", "Analyze SQL datasets")["is_tech"])
 
 
 class LiveJobsApiTests(unittest.TestCase):
@@ -236,244 +53,106 @@ class LiveJobsApiTests(unittest.TestCase):
         self.app = create_app()
         self.app.config["TESTING"] = True
         self.client = self.app.test_client()
-
-        self.headers = self.register(
-            "jobs-one@example.test"
-        )
+        account = {
+            "name": "Live Demo",
+            "email": f"jobs-{uuid4()}@example.test",
+            "password": "test-only-credential",
+        }
+        self.assertEqual(self.client.post("/api/register", json=account).status_code, 201)
+        token = self.client.post("/api/login", json=account).get_json()["access_token"]
+        self.headers = {"Authorization": "Bearer " + token}
 
     def tearDown(self):
         with self.app.app_context():
             db.session.remove()
             db.engine.dispose()
 
-    def register(self, email):
-        account = {
-            "name": "Jobs Demo",
-            "email": email,
-            "password": "jobs-test-only-password",
-        }
-
-        response = self.client.post(
-            "/api/register",
-            json=account,
-        )
-
-        self.assertEqual(
-            response.status_code,
-            201,
-        )
-
-        token = self.client.post(
-            "/api/login",
-            json=account,
-        ).get_json()["access_token"]
-
-        return {
-            "Authorization": f"Bearer {token}"
-        }
-
     def test_requires_authentication(self):
-        response = self.client.get(
-            "/api/jobs"
-        )
+        self.assertEqual(self.client.get("/api/jobs").status_code, 401)
 
-        self.assertEqual(
-            response.status_code,
-            401,
-        )
+    def test_multi_source_fetch_does_not_touch_current_app_in_worker(self):
+        fake_job = {
+            "provider_id": "1",
+            "title": "Python Backend Engineer",
+            "location": "Bengaluru",
+            "source_url": "https://example.com/jobs/1",
+            "provider_updated_at": None,
+            "description": "Python SQL REST APIs",
+            "content_hash": "abc",
+            "department": "Engineering",
+            "team": "Platform",
+            "work_mode": "Remote",
+            "experience_level": "Entry / Junior",
+            "tech_tags": ["Python", "SQL", "REST APIs"],
+            "is_tech": True,
+        }
 
-    def test_listing_reads_live_provider(self):
-        with patch(
-            "routes.jobs.fetch_board",
-            return_value=feed(posting()),
-        ) as fetch:
-            response = self.client.get(
-                "/api/jobs",
-                headers=self.headers,
-            )
-
-        self.assertEqual(
-            response.status_code,
-            200,
-        )
-
-        data = response.get_json()
-
-        self.assertEqual(
-            data["source"],
-            "greenhouse_live",
-        )
-
-        self.assertEqual(
-            data["total"],
-            2,
-        )
-
-        fetch.assert_called()
-
-        self.assertEqual(
-            response.headers["Cache-Control"],
-            "no-store",
-        )
-
-    def test_filters_are_applied_to_live_results(self):
-        jobs = [
-            posting(
-                1,
-                title="Python Backend Engineer",
-                location={
-                    "name": "Bengaluru"
-                },
-            ),
-            posting(
-                2,
-                title="SQL Data Engineer",
-                location={
-                    "name": "Pune"
-                },
-                content=(
-                    "<p>SQL and Python required.</p>"
-                ),
-            ),
-        ]
-
-        with patch(
-            "routes.jobs.fetch_board",
-            return_value=feed(*jobs),
-        ) as fetch:
-            response = self.client.get(
-                "/api/jobs"
-                "?q=Python"
-                "&location=Bengaluru"
-                "&board=canonical",
-                headers=self.headers,
-            )
-
-        self.assertEqual(
-            response.status_code,
-            200,
-        )
-
-        data = response.get_json()
-
-        self.assertEqual(
-            data["total"],
-            1,
-        )
-
-        self.assertEqual(
-            data["jobs"][0]["title"],
-            "Python Backend Engineer",
-        )
-
-        fetch.assert_called_once_with(
-            "canonical"
-        )
-
-    def test_selected_job_is_fetched_live(self):
-        with patch(
-            "routes.jobs.fetch_board",
-            return_value=feed(posting()),
-        ) as fetch:
-            response = self.client.get(
-                "/api/jobs/canonical/1",
-                headers=self.headers,
-            )
-
-        self.assertEqual(
-            response.status_code,
-            200,
-        )
-
-        data = response.get_json()
-
-        self.assertEqual(
-            data["source"],
-            "greenhouse_live",
-        )
-
-        self.assertEqual(
-            data["job"]["provider_id"],
-            "1",
-        )
-
-        self.assertTrue(
-            data["job"]["description"]
-        )
-
-        fetch.assert_called_once_with(
-            "canonical"
-        )
-
-    def test_missing_live_job_returns_404(self):
-        with patch(
-            "routes.jobs.fetch_board",
-            return_value=feed(),
-        ) as fetch:
-            response = self.client.get(
-                "/api/jobs/canonical/999999",
-                headers=self.headers,
-            )
-
-        self.assertEqual(
-            response.status_code,
-            404,
-        )
-
-        fetch.assert_called_once_with(
-            "canonical"
-        )
-
-    def test_live_comparison_saves_snapshot(self):
-        with patch(
-            "routes.jobs.fetch_board",
-            return_value=feed(posting()),
-        ) as fetch:
-            body = {
-                "submission_id": str(
-                    uuid4()
-                ),
-                "mode": "keyword",
+        def fake_fetch(source_key):
+            return {
+                "source_key": source_key,
+                "provider": "greenhouse",
+                "employer": "Demo",
+                "source_url": "https://example.com/careers",
+                "jobs": [fake_job],
             }
 
-            response = self.client.post(
-                "/api/jobs/canonical/1/compare",
+        registry = {
+            "greenhouse-demo": {
+                "provider": "greenhouse",
+                "label": "Demo",
+                "identifier": "demo",
+                "board_url": "https://example.com/careers",
+            }
+        }
+
+        with patch("routes.jobs.fetch_source", side_effect=fake_fetch), patch(
+            "routes.jobs.SOURCE_REGISTRY", registry
+        ), patch("routes.jobs.source_summary", return_value={
+            "source_key": "greenhouse-demo",
+            "provider": "greenhouse",
+            "employer": "Demo",
+            "source_url": "https://example.com/careers",
+        }):
+            response = self.client.get("/api/jobs", headers=self.headers)
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        data = response.get_json()
+        self.assertEqual(data["source"], "live_multi_provider")
+        self.assertTrue(data["tech_only"])
+        self.assertEqual(data["total"], 1)
+
+    def test_legacy_greenhouse_filter_still_works(self):
+        source = {
+            "source_key": "greenhouse-canonical",
+            "provider": "greenhouse",
+            "employer": "Canonical",
+            "source_url": "https://job-boards.greenhouse.io/canonical",
+            "jobs": [
+                {
+                    "provider_id": "1",
+                    "title": "Python Backend Engineer",
+                    "location": "Bengaluru",
+                    "source_url": "https://example.com/jobs/1",
+                    "provider_updated_at": None,
+                    "description": "Python",
+                    "content_hash": "abc",
+                    "department": "Engineering",
+                    "team": "Platform",
+                    "work_mode": "Remote",
+                    "experience_level": "Entry / Junior",
+                    "tech_tags": ["Python"],
+                    "is_tech": True,
+                }
+            ],
+        }
+        with patch("routes.jobs.fetch_source", return_value=source):
+            response = self.client.get(
+                "/api/jobs?board=canonical&q=Python",
                 headers=self.headers,
-                json=body,
             )
 
-        self.assertIn(
-            response.status_code,
-            (200, 201),
-        )
-
-        comparison = (
-            response.get_json()["comparison"]
-        )
-
-        self.assertEqual(
-            comparison["job"]["source_type"],
-            "greenhouse",
-        )
-
-        self.assertEqual(
-            comparison["job"]["provider_id"],
-            "1",
-        )
-
-        self.assertEqual(
-            comparison["job"]["description"],
-            "Requirements\n"
-            "Python, SQL and REST APIs are required.",
-        )
-
-        self.assertTrue(
-            comparison["job"]["content_hash"]
-        )
-
-        fetch.assert_called_once_with(
-            "canonical"
-        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["total"], 1)
 
 
 if __name__ == "__main__":

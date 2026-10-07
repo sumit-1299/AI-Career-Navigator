@@ -4,3 +4,4 @@ from models.skill import Skill
 from models.career_preference import CareerPreference
 from models.career import Career
 from models.career_skill import CareerSkill
+from models.password_reset_token import PasswordResetToken
