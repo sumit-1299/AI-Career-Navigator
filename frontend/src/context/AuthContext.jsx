@@ -8,7 +8,7 @@ export function AuthProvider({ children }) {
     try {
       const saved = localStorage.getItem('career_navigator_user');
       return saved ? JSON.parse(saved) : null;
-    } catch (e) {
+    } catch {
       return null;
     }
   });
@@ -16,7 +16,7 @@ export function AuthProvider({ children }) {
   const [token, setTokenState] = useState(() => {
     try {
       return localStorage.getItem('career_navigator_token');
-    } catch (e) {
+    } catch {
       return null;
     }
   });
@@ -26,46 +26,56 @@ export function AuthProvider({ children }) {
   const [targetCareerId, setTargetCareerId] = useState(() => {
     try {
       return parseInt(localStorage.getItem('career_navigator_target_career') || '1', 10);
-    } catch (e) {
+    } catch {
       return 1;
     }
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => {
+    try {
+      return Boolean(localStorage.getItem('career_navigator_token'));
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     if (token) {
       loadUserData();
+    } else {
+      setLoading(false);
     }
   }, [token]);
 
   useEffect(() => {
     try {
       localStorage.setItem('career_navigator_target_career', targetCareerId.toString());
-    } catch (e) {
-      // Ignore localStorage write error
-    }
+    } catch {}
   }, [targetCareerId]);
 
+  useEffect(() => {
+    function handleUnauthorized() {
+      setToken(null);
+      setTokenState(null);
+      setUser(null);
+      setProfile(null);
+      setPreferences(null);
+    }
+
+    window.addEventListener('career-navigator:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('career-navigator:unauthorized', handleUnauthorized);
+  }, []);
+
   async function loadUserData() {
+    setLoading(true);
     try {
-      setLoading(true);
       try {
         const profRes = await api.getProfile();
         if (profRes?.profile) setProfile(profRes.profile);
-      } catch (e) {
-        // Profile might not exist yet for new user
-      }
-
+      } catch {}
       try {
         const prefRes = await api.getPreferences();
-        if (prefRes?.career_preferences) {
-          setPreferences(prefRes.career_preferences);
-        }
-      } catch (e) {
-        // Preferences might not exist yet
-      }
-    } catch (err) {
-      console.warn('User data loading note:', err);
+        if (prefRes?.career_preferences) setPreferences(prefRes.career_preferences);
+      } catch {}
     } finally {
       setLoading(false);
     }
@@ -79,7 +89,7 @@ export function AuthProvider({ children }) {
       setUser(res.user);
       try {
         localStorage.setItem('career_navigator_user', JSON.stringify(res.user));
-      } catch (e) {}
+      } catch {}
     }
     return res;
   }
@@ -100,7 +110,7 @@ export function AuthProvider({ children }) {
     setPreferences(null);
     try {
       localStorage.removeItem('career_navigator_user');
-    } catch (e) {}
+    } catch {}
   }
 
   return (
@@ -108,7 +118,7 @@ export function AuthProvider({ children }) {
       value={{
         user,
         token,
-        isAuthenticated: !!token,
+        isAuthenticated: Boolean(token),
         profile,
         setProfile,
         preferences,
@@ -128,20 +138,17 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    return {
-      user: null,
-      token: null,
-      isAuthenticated: false,
-      profile: null,
-      preferences: null,
-      targetCareerId: 1,
-      setTargetCareerId: () => {},
-      login: async () => {},
-      register: async () => {},
-      logout: () => {},
-      loading: false,
-    };
-  }
-  return context;
+  return context || {
+    user: null,
+    token: null,
+    isAuthenticated: false,
+    profile: null,
+    preferences: null,
+    targetCareerId: 1,
+    setTargetCareerId: () => {},
+    login: async () => {},
+    register: async () => {},
+    logout: () => {},
+    loading: false,
+  };
 }
