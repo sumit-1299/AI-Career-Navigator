@@ -11,6 +11,12 @@ from routes.skills import skills_bp
 from routes.careers import careers_bp
 from routes.learning_resources import learning_resources_bp
 from routes.career_market import career_market_bp
+from routes.assessments import assessments_bp
+from routes.roadmaps import roadmaps_bp
+from routes.evidence import evidence_bp
+from routes.job_matches import job_matches_bp
+from routes.jobs import jobs_bp
+from routes.resume import resume_bp
 from services.learning_resource_service import LearningResourceService
 
 
@@ -20,7 +26,7 @@ def create_app(config_class=Config):
     db.init_app(app)
     JWTManager(app)
 
-    # Register API blueprints
+    # Main production blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(profile_bp)
     app.register_blueprint(career_preferences_bp)
@@ -28,6 +34,14 @@ def create_app(config_class=Config):
     app.register_blueprint(careers_bp)
     app.register_blueprint(learning_resources_bp)
     app.register_blueprint(career_market_bp)
+
+    # Integrated research-intelligence blueprints
+    app.register_blueprint(assessments_bp)
+    app.register_blueprint(roadmaps_bp)
+    app.register_blueprint(evidence_bp)
+    app.register_blueprint(job_matches_bp)
+    app.register_blueprint(jobs_bp)
+    app.register_blueprint(resume_bp)
 
     @app.after_request
     def add_cors_headers(response):
@@ -93,7 +107,7 @@ def create_app(config_class=Config):
             "status": "healthy" if http_code == 200 else "degraded",
             "service": "ai-career-navigator",
             "environment": app.config.get("ENV", "production"),
-            "database": db_status
+            "database": db_status,
         }, http_code
 
     @app.route("/db-test")
