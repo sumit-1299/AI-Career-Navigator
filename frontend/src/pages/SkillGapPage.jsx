@@ -5,6 +5,7 @@ import { api } from '../services/api';
 import { RadialGauge } from '../components/common/RadialGauge';
 import { Badge } from '../components/common/Badge';
 import { Spinner, Alert } from '../components/common/UIFeedback';
+import { MultiHopTrajectoryExplorer } from '../components/analytics/MultiHopTrajectoryExplorer';
 import {
   Target,
   CheckCircle2,
@@ -510,6 +511,24 @@ export function SkillGapPage() {
                   {portfolioData.total_projects_count}
                 </span>
               ) : null}
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('trajectory');
+                setSearchParams((prev) => {
+                  const p = new URLSearchParams(prev);
+                  p.set('tab', 'trajectory');
+                  return p;
+                });
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 transition ${
+                activeTab === 'trajectory'
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Compass className="w-4 h-4 text-indigo-400" />
+              Multi-Hop Trajectory
             </button>
           </div>
 
@@ -2525,6 +2544,17 @@ export function SkillGapPage() {
                     })
                 )}
               </div>
+            </div>
+          )}
+
+          {/* TAB 7: Phase 11 Module 11.5: Multi-Hop Career Trajectory Intelligence */}
+          {activeTab === 'trajectory' && (
+            <div className="space-y-6">
+              <MultiHopTrajectoryExplorer
+                targetCareerId={activeCareerId}
+                targetTitle={selectedCareer?.career_name || selectedCareer?.title}
+                availableCareers={careers}
+              />
             </div>
           )}
         </>

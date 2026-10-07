@@ -13,8 +13,10 @@ import {
   Zap,
   FileText,
   ShieldCheck,
+  Award,
 } from 'lucide-react';
 import { CareerReadinessReport } from '../components/analytics/CareerReadinessReport';
+import { RecommendationEvaluationDashboard } from '../components/analytics/RecommendationEvaluationDashboard';
 
 export function AnalyticsPage() {
   const { targetCareerId, setTargetCareerId } = useAuth();
@@ -112,6 +114,18 @@ export function AnalyticsPage() {
               <TrendingUp className="w-4 h-4 text-indigo-600" />
               <span>Velocity & Learning ROI</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('benchmark')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                activeTab === 'benchmark'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Award className="w-4 h-4 text-purple-600" />
+              <span>Research Benchmark</span>
+            </button>
           </div>
         </div>
 
@@ -131,7 +145,9 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      {activeTab === 'report' ? (
+      {activeTab === 'benchmark' ? (
+        <RecommendationEvaluationDashboard />
+      ) : activeTab === 'report' ? (
         <CareerReadinessReport
           careerId={targetCareerId}
           careerName={career_name || 'Target Role'}

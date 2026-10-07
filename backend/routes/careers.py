@@ -29,6 +29,11 @@ from services.career_pathway_service import CareerPathwayService
 from services.career_simulator_service import CareerSimulatorService
 from services.skill_roi_service import SkillRoiService
 from services.portfolio_project_service import PortfolioProjectService
+from services.academic_benchmark_service import AcademicBenchmarkService
+from services.industry_demand_service import IndustryDemandService
+from services.career_trajectory_service import CareerTrajectoryService
+from services.interview_simulation_service import InterviewSimulationService
+from services.recommendation_evaluation_service import RecommendationEvaluationService
 
 careers_bp = Blueprint("careers", __name__, url_prefix="/api/careers")
 
@@ -704,6 +709,130 @@ def get_career_pathways(career_id):
     }), 200
 
 
+@careers_bp.route("/<int:career_id>/academic-benchmark", methods=["GET"])
+@jwt_required(optional=True)
+def get_career_academic_benchmark(career_id):
+    """
+    Module 11.3: Academic Recommendation Benchmarking.
+    Compares student's academic curriculum evidence against career requirements
+    and student demonstrated proficiency.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with id {career_id} not found"
+        }), 404
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else request.args.get("user_id", type=int)
+
+    program_id = request.args.get("program")
+
+    result = AcademicBenchmarkService.benchmark_career_curriculum(
+        career_id=career_id,
+        user_id=user_id,
+        program_id=program_id
+    )
+
+    if "error" in result:
+        return jsonify({
+            "status": "error",
+            "message": result.get("message", "Failed to calculate academic benchmark")
+        }), 404
+
+    return jsonify({
+        "status": "success",
+        **result
+    }), 200
+
+
+@careers_bp.route("/<int:career_id>/industry-demand", methods=["GET"])
+@jwt_required(optional=True)
+def get_career_industry_demand(career_id):
+    """
+    Module 11.4: Real-Time Industry Trends & Dynamic Skill Demand Weighting.
+    Evaluates market evidence and computes dynamic skill priority weights.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with id {career_id} not found"
+        }), 404
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else request.args.get("user_id", type=int)
+
+    trend_filter = request.args.get("trend")
+    demand_level_filter = request.args.get("demand_level")
+    limit = request.args.get("limit", default=None, type=int)
+
+    result = IndustryDemandService.evaluate_career_industry_demand(
+        career_id=career_id,
+        user_id=user_id,
+        trend_filter=trend_filter,
+        demand_level_filter=demand_level_filter,
+        limit=limit
+    )
+
+    if "error" in result:
+        return jsonify({
+            "status": "error",
+            "message": result.get("message", "Failed to evaluate career industry demand")
+        }), 404
+
+    return jsonify({
+        "status": "success",
+        **result
+    }), 200
+
+
+@careers_bp.route("/<int:career_id>/trajectory", methods=["GET"])
+@jwt_required(optional=True)
+def get_career_trajectory(career_id):
+    """
+    Module 11.5: Multi-Hop Career Trajectory Intelligence.
+    Calculates multi-step career paths from source career to target career,
+    evaluating transition compatibility, costs, effort, and progressive skill reuse.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Target career with id {career_id} not found"
+        }), 404
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else request.args.get("user_id", type=int)
+
+    from_career_id = request.args.get("from_career_id", type=int)
+    objective = request.args.get("objective", "BEST_FIT")
+    max_hops = request.args.get("max_hops", default=3, type=int)
+    limit = request.args.get("limit", default=3, type=int)
+
+    result = CareerTrajectoryService.find_trajectory(
+        target_career_id=career_id,
+        from_career_id=from_career_id,
+        objective=objective,
+        max_hops=max_hops,
+        user_id=user_id,
+        limit=limit
+    )
+
+    if "error" in result:
+        status_code = 404 if "NOT_FOUND" in result.get("error", "") else 400
+        return jsonify({
+            "status": "error",
+            "message": result.get("message", "Failed to calculate career trajectory")
+        }), status_code
+
+    return jsonify({
+        "status": "success",
+        **result
+    }), 200
+
+
 @careers_bp.route("/<int:career_id>/simulate-skill", methods=["GET", "POST"])
 @jwt_required(optional=True)
 def simulate_career_skill(career_id):
@@ -964,6 +1093,137 @@ def get_career_portfolio_recommendations(career_id):
     return jsonify({
         "status": "success",
         **result
+    }), 200
+
+@careers_bp.route("/<int:career_id>/interview-simulation", methods=["GET", "POST"])
+@jwt_required(optional=True)
+def get_or_create_interview_simulation(career_id):
+    """
+    Module 11.6: AI Interview Simulation & Career Readiness Assessment.
+    Generates a deterministic session with curated questions for the target career.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with id {career_id} not found"
+        }), 404
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else request.args.get("user_id", type=int)
+
+    data = request.get_json(silent=True) or {}
+    difficulty = request.args.get("difficulty") or data.get("difficulty") or "INTERMEDIATE"
+    question_count = request.args.get("question_count", type=int) or data.get("question_count", 5)
+
+    result = InterviewSimulationService.generate_session(
+        career_id=career_id,
+        difficulty=difficulty,
+        question_count=question_count,
+        user_id=user_id
+    )
+
+    if "error" in result:
+        status_code = 404 if "NOT_FOUND" in result.get("error", "") else 400
+        return jsonify({
+            "status": "error",
+            "message": result.get("message", "Failed to generate interview simulation session")
+        }), status_code
+
+    return jsonify({
+        "status": "success",
+        **result
+    }), 200
+
+
+@careers_bp.route("/<int:career_id>/interview-simulation/evaluate", methods=["POST"])
+@jwt_required(optional=True)
+def evaluate_interview_simulation(career_id):
+    """
+    Module 11.6: AI Interview Simulation & Career Readiness Assessment.
+    Evaluates student answers against expected competencies, calculates category scores,
+    overall readiness, improvement recommendations, and cross-module intelligence.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with id {career_id} not found"
+        }), 404
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else request.args.get("user_id", type=int)
+
+    data = request.get_json(silent=True) or {}
+    answers = data.get("answers")
+    if not answers or not isinstance(answers, list):
+        return jsonify({
+            "status": "error",
+            "message": "Payload must include a non-empty 'answers' list of {question_id, answer}"
+        }), 400
+
+    difficulty = data.get("difficulty") or request.args.get("difficulty") or "INTERMEDIATE"
+
+    result = InterviewSimulationService.evaluate_session(
+        career_id=career_id,
+        answers=answers,
+        difficulty=difficulty,
+        user_id=user_id
+    )
+
+    if "error" in result:
+        status_code = 404 if "NOT_FOUND" in result.get("error", "") else 400
+        return jsonify({
+            "status": "error",
+            "message": result.get("message", "Failed to evaluate interview simulation")
+        }), status_code
+
+    return jsonify({
+        "status": "success",
+        **result
+    }), 200
+
+
+@careers_bp.route("/evaluation/benchmark", methods=["GET", "POST"])
+@jwt_required(optional=True)
+def get_recommendation_benchmark():
+    """
+    Phase 12 Module 12.1: End-to-End Recommendation Evaluation & Research Validation.
+    Executes and returns structured benchmark evaluation measuring ranking quality,
+    skill-gap detection, robustness, cross-module consistency, and safety guardrails.
+    """
+    data = request.get_json(silent=True) or {}
+    case_id = request.args.get("case_id") or data.get("case_id")
+    limit = request.args.get("limit", type=int) or data.get("limit")
+
+    include_robustness_param = request.args.get("include_robustness")
+    if include_robustness_param is not None:
+        include_robustness = include_robustness_param.lower() in ("true", "1", "yes")
+    else:
+        include_robustness = data.get("include_robustness", True)
+
+    include_cross_module_param = request.args.get("include_cross_module")
+    if include_cross_module_param is not None:
+        include_cross_module = include_cross_module_param.lower() in ("true", "1", "yes")
+    else:
+        include_cross_module = data.get("include_cross_module", True)
+
+    report = RecommendationEvaluationService.run_full_benchmark_evaluation(
+        case_id_filter=case_id,
+        include_robustness=include_robustness,
+        include_cross_module=include_cross_module,
+        limit_cases=limit
+    )
+
+    if "error" in report:
+        return jsonify({
+            "status": "error",
+            "message": report.get("message", "Benchmark evaluation error")
+        }), 404
+
+    return jsonify({
+        "status": "success",
+        "benchmark": report
     }), 200
 
 

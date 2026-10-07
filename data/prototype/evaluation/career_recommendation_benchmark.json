@@ -1,0 +1,1433 @@
+{
+  "benchmark_name": "AI Career Navigator \u2014 Recommendation & Intelligence Benchmark",
+  "benchmark_version": "1.0.0",
+  "dataset_type": "DEMO / SAMPLE / PROTOTYPE RESEARCH BENCHMARK \u2014 NOT REAL STUDENT GROUND TRUTH",
+  "disclaimer": "DEMO / SAMPLE / PROTOTYPE RESEARCH BENCHMARK \u2014 NOT REAL STUDENT GROUND TRUTH. This dataset consists of standardized synthetic competency scenarios curated for local research evaluation and benchmarking of recommendation ranking, skill-gap detection, and intelligence consistency. It does NOT represent real student personal records, university ground truth, or employment prediction outcomes.",
+  "total_cases": 25,
+  "metadata": {
+    "careers_covered": 10,
+    "scenarios": [
+      "STRONG_FIT",
+      "WEAK_FIT",
+      "CROSS_DOMAIN",
+      "BEGINNER",
+      "ACADEMIC_HEAVY",
+      "SELF_TAUGHT",
+      "CAREER_TRANSITION"
+    ],
+    "grading_scale": {
+      "3": "Primary role alignment (exact match)",
+      "2": "Secondary role alignment (adjacent pathway)",
+      "1": "Partial role alignment (transferable competencies)"
+    }
+  },
+  "cases": [
+    {
+      "case_id": "BENCH-001",
+      "target_profile": "Full-Stack Software Engineering Trainee",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Python",
+          "proficiency": 8,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "Java",
+          "proficiency": 8,
+          "canonical_skill_id": 2
+        },
+        {
+          "skill_name": "Data Structures",
+          "proficiency": 8,
+          "canonical_skill_id": 20
+        },
+        {
+          "skill_name": "Git",
+          "proficiency": 7,
+          "canonical_skill_id": 8
+        },
+        {
+          "skill_name": "SQL",
+          "proficiency": 6,
+          "canonical_skill_id": 3
+        }
+      ],
+      "preferred_domains": [
+        "Software Development"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Technology",
+        "specialization": "Computer Science",
+        "cgpa": 8.8
+      },
+      "expected_career_ids": [
+        1
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 1,
+          "career_title": "Software Developer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 2,
+          "career_title": "Web Developer",
+          "relevance_grade": 1
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Mastery across all 5 Software Developer competencies; should rank Software Developer #1 with high readiness."
+    },
+    {
+      "case_id": "BENCH-002",
+      "target_profile": "Front-End Focused Web Specialist",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "HTML",
+          "proficiency": 9,
+          "canonical_skill_id": 4
+        },
+        {
+          "skill_name": "CSS",
+          "proficiency": 8,
+          "canonical_skill_id": 5
+        },
+        {
+          "skill_name": "JavaScript",
+          "proficiency": 8,
+          "canonical_skill_id": 6
+        },
+        {
+          "skill_name": "React",
+          "proficiency": 8,
+          "canonical_skill_id": 7
+        },
+        {
+          "skill_name": "Git",
+          "proficiency": 7,
+          "canonical_skill_id": 8
+        }
+      ],
+      "preferred_domains": [
+        "Web Development"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Science",
+        "specialization": "Information Technology",
+        "cgpa": 8.2
+      },
+      "expected_career_ids": [
+        2
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 2,
+          "career_title": "Web Developer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 1,
+          "career_title": "Software Developer",
+          "relevance_grade": 1
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Mastery across modern Web Developer stack; Web Developer should be ranked #1."
+    },
+    {
+      "case_id": "BENCH-003",
+      "target_profile": "Junior Business Data Analyst",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "Python",
+          "proficiency": 6,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "SQL",
+          "proficiency": 8,
+          "canonical_skill_id": 3
+        },
+        {
+          "skill_name": "Excel",
+          "proficiency": 8,
+          "canonical_skill_id": 23
+        },
+        {
+          "skill_name": "Statistics",
+          "proficiency": 6,
+          "canonical_skill_id": 24
+        },
+        {
+          "skill_name": "Power BI",
+          "proficiency": 6,
+          "canonical_skill_id": 25
+        }
+      ],
+      "preferred_domains": [
+        "Data Analytics"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Commerce / IT",
+        "specialization": "Business Analytics",
+        "cgpa": 7.9
+      },
+      "expected_career_ids": [
+        3
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 3,
+          "career_title": "Data Analyst",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 4,
+          "career_title": "Data Scientist",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Strong SQL/Excel/Power BI alignment; ranks Data Analyst #1, Data Scientist as adjacent."
+    },
+    {
+      "case_id": "BENCH-004",
+      "target_profile": "Predictive Analytics & Machine Learning Enthusiast",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Python",
+          "proficiency": 8,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "SQL",
+          "proficiency": 7,
+          "canonical_skill_id": 3
+        },
+        {
+          "skill_name": "Statistics",
+          "proficiency": 8,
+          "canonical_skill_id": 24
+        },
+        {
+          "skill_name": "Machine Learning",
+          "proficiency": 8,
+          "canonical_skill_id": 14
+        },
+        {
+          "skill_name": "Pandas",
+          "proficiency": 8,
+          "canonical_skill_id": 21
+        }
+      ],
+      "preferred_domains": [
+        "Data Science"
+      ],
+      "education_context": {
+        "degree": "Master of Science",
+        "specialization": "Data Science",
+        "cgpa": 9.1
+      },
+      "expected_career_ids": [
+        4
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 4,
+          "career_title": "Data Scientist",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 5,
+          "career_title": "AI/ML Engineer",
+          "relevance_grade": 2
+        },
+        {
+          "career_id": 3,
+          "career_title": "Data Analyst",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Comprehensive data science toolkit; ranks Data Scientist #1."
+    },
+    {
+      "case_id": "BENCH-005",
+      "target_profile": "Deep Learning & AI System Developer",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Python",
+          "proficiency": 9,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "Machine Learning",
+          "proficiency": 8,
+          "canonical_skill_id": 14
+        },
+        {
+          "skill_name": "Deep Learning",
+          "proficiency": 8,
+          "canonical_skill_id": 15
+        },
+        {
+          "skill_name": "TensorFlow",
+          "proficiency": 7,
+          "canonical_skill_id": 22
+        },
+        {
+          "skill_name": "Statistics",
+          "proficiency": 7,
+          "canonical_skill_id": 24
+        }
+      ],
+      "preferred_domains": [
+        "Artificial Intelligence"
+      ],
+      "education_context": {
+        "degree": "Master of Technology",
+        "specialization": "Artificial Intelligence",
+        "cgpa": 9.0
+      },
+      "expected_career_ids": [
+        5
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 5,
+          "career_title": "AI/ML Engineer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 4,
+          "career_title": "Data Scientist",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Specialized in Neural Architectures; ranks AI/ML Engineer #1."
+    },
+    {
+      "case_id": "BENCH-006",
+      "target_profile": "Cloud Infrastructure Architect",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Linux",
+          "proficiency": 8,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Networking",
+          "proficiency": 8,
+          "canonical_skill_id": 17
+        },
+        {
+          "skill_name": "AWS",
+          "proficiency": 8,
+          "canonical_skill_id": 16
+        },
+        {
+          "skill_name": "Python",
+          "proficiency": 6,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "Docker",
+          "proficiency": 7,
+          "canonical_skill_id": 9
+        }
+      ],
+      "preferred_domains": [
+        "Cloud Computing"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Technology",
+        "specialization": "Cloud Computing",
+        "cgpa": 8.4
+      },
+      "expected_career_ids": [
+        6
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 6,
+          "career_title": "Cloud Engineer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 7,
+          "career_title": "DevOps Engineer",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Strong AWS/Linux/Networking core; Cloud Engineer ranks #1."
+    },
+    {
+      "case_id": "BENCH-007",
+      "target_profile": "Automation & CI/CD Platform Practitioner",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Linux",
+          "proficiency": 8,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Docker",
+          "proficiency": 8,
+          "canonical_skill_id": 9
+        },
+        {
+          "skill_name": "Kubernetes",
+          "proficiency": 8,
+          "canonical_skill_id": 10
+        },
+        {
+          "skill_name": "Git",
+          "proficiency": 8,
+          "canonical_skill_id": 8
+        },
+        {
+          "skill_name": "CI/CD",
+          "proficiency": 8,
+          "canonical_skill_id": 19
+        }
+      ],
+      "preferred_domains": [
+        "DevOps"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Engineering",
+        "specialization": "Information Technology",
+        "cgpa": 8.5
+      },
+      "expected_career_ids": [
+        7
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 7,
+          "career_title": "DevOps Engineer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 6,
+          "career_title": "Cloud Engineer",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Complete DevOps tooling stack; DevOps Engineer ranks #1."
+    },
+    {
+      "case_id": "BENCH-008",
+      "target_profile": "Security Operations & Defense Analyst",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Linux",
+          "proficiency": 8,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Networking",
+          "proficiency": 8,
+          "canonical_skill_id": 17
+        },
+        {
+          "skill_name": "Cybersecurity",
+          "proficiency": 8,
+          "canonical_skill_id": 18
+        },
+        {
+          "skill_name": "Python",
+          "proficiency": 6,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "SIEM",
+          "proficiency": 7,
+          "canonical_skill_id": 26
+        }
+      ],
+      "preferred_domains": [
+        "Cybersecurity"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Science",
+        "specialization": "Cybersecurity",
+        "cgpa": 8.6
+      },
+      "expected_career_ids": [
+        8
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 8,
+          "career_title": "Cybersecurity Analyst",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 9,
+          "career_title": "Network Engineer",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Strong SecOps/SIEM/Networking alignment; Cybersecurity Analyst ranks #1."
+    },
+    {
+      "case_id": "BENCH-009",
+      "target_profile": "Enterprise Infrastructure & Cisco Specialist",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Networking",
+          "proficiency": 10,
+          "canonical_skill_id": 17
+        },
+        {
+          "skill_name": "Linux",
+          "proficiency": 6,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Routing and Switching",
+          "proficiency": 8,
+          "canonical_skill_id": 28
+        },
+        {
+          "skill_name": "CCNA",
+          "proficiency": 8,
+          "canonical_skill_id": 27
+        },
+        {
+          "skill_name": "Network Security",
+          "proficiency": 7,
+          "canonical_skill_id": 30
+        }
+      ],
+      "preferred_domains": [
+        "Networking"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Technology",
+        "specialization": "Electronics & Communication",
+        "cgpa": 8.1
+      },
+      "expected_career_ids": [
+        9
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 9,
+          "career_title": "Network Engineer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 8,
+          "career_title": "Cybersecurity Analyst",
+          "relevance_grade": 1
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Cisco Routing/CCNA mastery; Network Engineer ranks #1."
+    },
+    {
+      "case_id": "BENCH-010",
+      "target_profile": "Relational Database Administrator",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "SQL",
+          "proficiency": 10,
+          "canonical_skill_id": 3
+        },
+        {
+          "skill_name": "PostgreSQL",
+          "proficiency": 8,
+          "canonical_skill_id": 12
+        },
+        {
+          "skill_name": "MySQL",
+          "proficiency": 8,
+          "canonical_skill_id": 13
+        },
+        {
+          "skill_name": "Linux",
+          "proficiency": 6,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Database Security",
+          "proficiency": 7,
+          "canonical_skill_id": 29
+        }
+      ],
+      "preferred_domains": [
+        "Database Management"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Computer Applications",
+        "specialization": "Database Systems",
+        "cgpa": 8.0
+      },
+      "expected_career_ids": [
+        10
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 10,
+          "career_title": "Database Administrator",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 3,
+          "career_title": "Data Analyst",
+          "relevance_grade": 1
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Relational DB engines and DBA security; Database Administrator ranks #1."
+    },
+    {
+      "case_id": "BENCH-011",
+      "target_profile": "Novice Programmer with Elementary Web Basics",
+      "scenario_category": "BEGINNER",
+      "proficiency_level": "BEGINNER",
+      "current_skills": [
+        {
+          "skill_name": "HTML",
+          "proficiency": 3,
+          "canonical_skill_id": 4
+        },
+        {
+          "skill_name": "CSS",
+          "proficiency": 2,
+          "canonical_skill_id": 5
+        }
+      ],
+      "preferred_domains": [
+        "Web Development"
+      ],
+      "education_context": {
+        "degree": "Undergraduate First Year",
+        "specialization": "General Science",
+        "cgpa": 7.0
+      },
+      "expected_career_ids": [
+        2
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 2,
+          "career_title": "Web Developer",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [
+        "JavaScript",
+        "React",
+        "Git"
+      ],
+      "notes": "Early learner with only HTML/CSS fundamentals; Web Developer is top relative fit with major gaps."
+    },
+    {
+      "case_id": "BENCH-012",
+      "target_profile": "Foundational Python Learner",
+      "scenario_category": "BEGINNER",
+      "proficiency_level": "BEGINNER",
+      "current_skills": [
+        {
+          "skill_name": "Python",
+          "proficiency": 3,
+          "canonical_skill_id": 1
+        }
+      ],
+      "preferred_domains": [
+        "Software Development"
+      ],
+      "education_context": {
+        "degree": "High School Diploma",
+        "specialization": "Science",
+        "cgpa": 7.5
+      },
+      "expected_career_ids": [
+        1,
+        3
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 1,
+          "career_title": "Software Developer",
+          "relevance_grade": 2
+        },
+        {
+          "career_id": 3,
+          "career_title": "Data Analyst",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [
+        "Java",
+        "Data Structures",
+        "Git",
+        "SQL"
+      ],
+      "notes": "Single beginner skill (Python 3/10); correctly identifies multiple core missing skills for Software Developer."
+    },
+    {
+      "case_id": "BENCH-013",
+      "target_profile": "Cross-Disciplinary Web & Data Generalist",
+      "scenario_category": "CROSS_DOMAIN",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "Python",
+          "proficiency": 7,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "SQL",
+          "proficiency": 6,
+          "canonical_skill_id": 3
+        },
+        {
+          "skill_name": "HTML",
+          "proficiency": 7,
+          "canonical_skill_id": 4
+        },
+        {
+          "skill_name": "JavaScript",
+          "proficiency": 6,
+          "canonical_skill_id": 6
+        },
+        {
+          "skill_name": "Git",
+          "proficiency": 6,
+          "canonical_skill_id": 8
+        }
+      ],
+      "preferred_domains": [
+        "Software Development",
+        "Web Development"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Science",
+        "specialization": "Computer Applications",
+        "cgpa": 8.0
+      },
+      "expected_career_ids": [
+        1,
+        2
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 1,
+          "career_title": "Software Developer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 2,
+          "career_title": "Web Developer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 3,
+          "career_title": "Data Analyst",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [
+        "Java",
+        "Data Structures"
+      ],
+      "notes": "Hybrid web/data skills; ranks Software Developer and Web Developer closely in top 3."
+    },
+    {
+      "case_id": "BENCH-014",
+      "target_profile": "Academic Statistics & Mathematics Researcher",
+      "scenario_category": "ACADEMIC_HEAVY",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Statistics",
+          "proficiency": 9,
+          "canonical_skill_id": 24
+        },
+        {
+          "skill_name": "Python",
+          "proficiency": 7,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "SQL",
+          "proficiency": 5,
+          "canonical_skill_id": 3
+        }
+      ],
+      "preferred_domains": [
+        "Data Science",
+        "Data Analytics"
+      ],
+      "education_context": {
+        "degree": "Master of Science",
+        "specialization": "Applied Statistics",
+        "cgpa": 9.3
+      },
+      "expected_career_ids": [
+        3,
+        4
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 3,
+          "career_title": "Data Analyst",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 4,
+          "career_title": "Data Scientist",
+          "relevance_grade": 3
+        }
+      ],
+      "expected_missing_skills": [
+        "Machine Learning",
+        "Pandas"
+      ],
+      "notes": "Strong theoretical foundations; ranks Data Analyst and Data Scientist at top."
+    },
+    {
+      "case_id": "BENCH-015",
+      "target_profile": "Self-Taught Practical Modern Developer",
+      "scenario_category": "SELF_TAUGHT",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "JavaScript",
+          "proficiency": 8,
+          "canonical_skill_id": 6
+        },
+        {
+          "skill_name": "React",
+          "proficiency": 7,
+          "canonical_skill_id": 7
+        },
+        {
+          "skill_name": "Git",
+          "proficiency": 8,
+          "canonical_skill_id": 8
+        },
+        {
+          "skill_name": "HTML",
+          "proficiency": 8,
+          "canonical_skill_id": 4
+        },
+        {
+          "skill_name": "CSS",
+          "proficiency": 7,
+          "canonical_skill_id": 5
+        }
+      ],
+      "preferred_domains": [
+        "Web Development"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Arts",
+        "specialization": "Humanities",
+        "cgpa": 7.2
+      },
+      "expected_career_ids": [
+        2
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 2,
+          "career_title": "Web Developer",
+          "relevance_grade": 3
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Non-CS degree with self-taught web skills; skill fit should elevate Web Developer to top ranking."
+    },
+    {
+      "case_id": "BENCH-016",
+      "target_profile": "Linux Sysadmin Transitioning to DevOps",
+      "scenario_category": "CAREER_TRANSITION",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "Linux",
+          "proficiency": 9,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Networking",
+          "proficiency": 7,
+          "canonical_skill_id": 17
+        },
+        {
+          "skill_name": "Git",
+          "proficiency": 6,
+          "canonical_skill_id": 8
+        },
+        {
+          "skill_name": "Docker",
+          "proficiency": 5,
+          "canonical_skill_id": 9
+        }
+      ],
+      "preferred_domains": [
+        "DevOps",
+        "Cloud Computing"
+      ],
+      "education_context": {
+        "degree": "Diploma in IT",
+        "specialization": "System Administration",
+        "cgpa": 7.8
+      },
+      "expected_career_ids": [
+        7,
+        6
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 7,
+          "career_title": "DevOps Engineer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 6,
+          "career_title": "Cloud Engineer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 8,
+          "career_title": "Cybersecurity Analyst",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [
+        "Kubernetes",
+        "CI/CD"
+      ],
+      "notes": "Sysadmin pivoting to DevOps/Cloud; detects Kubernetes and CI/CD as critical missing gaps."
+    },
+    {
+      "case_id": "BENCH-017",
+      "target_profile": "BI Analyst Transitioning to Data Science",
+      "scenario_category": "CAREER_TRANSITION",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "SQL",
+          "proficiency": 9,
+          "canonical_skill_id": 3
+        },
+        {
+          "skill_name": "Excel",
+          "proficiency": 9,
+          "canonical_skill_id": 23
+        },
+        {
+          "skill_name": "Power BI",
+          "proficiency": 8,
+          "canonical_skill_id": 25
+        },
+        {
+          "skill_name": "Python",
+          "proficiency": 5,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "Statistics",
+          "proficiency": 5,
+          "canonical_skill_id": 24
+        }
+      ],
+      "preferred_domains": [
+        "Data Science"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Science",
+        "specialization": "Statistics",
+        "cgpa": 8.0
+      },
+      "expected_career_ids": [
+        3,
+        4
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 3,
+          "career_title": "Data Analyst",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 4,
+          "career_title": "Data Scientist",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [
+        "Machine Learning",
+        "Pandas"
+      ],
+      "notes": "Current Data Analyst targeting Data Science; correctly flags ML and Pandas as missing."
+    },
+    {
+      "case_id": "BENCH-018",
+      "target_profile": "Network Admin Transitioning to Cybersecurity",
+      "scenario_category": "CAREER_TRANSITION",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "Networking",
+          "proficiency": 9,
+          "canonical_skill_id": 17
+        },
+        {
+          "skill_name": "Linux",
+          "proficiency": 7,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Routing and Switching",
+          "proficiency": 7,
+          "canonical_skill_id": 28
+        },
+        {
+          "skill_name": "Network Security",
+          "proficiency": 6,
+          "canonical_skill_id": 30
+        }
+      ],
+      "preferred_domains": [
+        "Cybersecurity"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Technology",
+        "specialization": "Networks",
+        "cgpa": 7.9
+      },
+      "expected_career_ids": [
+        8,
+        9
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 8,
+          "career_title": "Cybersecurity Analyst",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 9,
+          "career_title": "Network Engineer",
+          "relevance_grade": 3
+        }
+      ],
+      "expected_missing_skills": [
+        "Cybersecurity",
+        "SIEM"
+      ],
+      "notes": "Network professional moving into SecOps; flags SIEM and core Cybersecurity as missing."
+    },
+    {
+      "case_id": "BENCH-019",
+      "target_profile": "Cloud Container Specialist (Docker & K8s)",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Linux",
+          "proficiency": 8,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Docker",
+          "proficiency": 9,
+          "canonical_skill_id": 9
+        },
+        {
+          "skill_name": "Kubernetes",
+          "proficiency": 8,
+          "canonical_skill_id": 10
+        },
+        {
+          "skill_name": "AWS",
+          "proficiency": 7,
+          "canonical_skill_id": 16
+        },
+        {
+          "skill_name": "CI/CD",
+          "proficiency": 7,
+          "canonical_skill_id": 19
+        }
+      ],
+      "preferred_domains": [
+        "DevOps",
+        "Cloud Computing"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Engineering",
+        "specialization": "Computer Science",
+        "cgpa": 8.5
+      },
+      "expected_career_ids": [
+        7,
+        6
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 7,
+          "career_title": "DevOps Engineer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 6,
+          "career_title": "Cloud Engineer",
+          "relevance_grade": 3
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "Container and orchestration master; ties between DevOps and Cloud in top 2."
+    },
+    {
+      "case_id": "BENCH-020",
+      "target_profile": "Pure SQL Database Developer",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "SQL",
+          "proficiency": 9,
+          "canonical_skill_id": 3
+        },
+        {
+          "skill_name": "PostgreSQL",
+          "proficiency": 7,
+          "canonical_skill_id": 12
+        },
+        {
+          "skill_name": "MySQL",
+          "proficiency": 7,
+          "canonical_skill_id": 13
+        }
+      ],
+      "preferred_domains": [
+        "Database Management"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Science",
+        "specialization": "Information Systems",
+        "cgpa": 8.0
+      },
+      "expected_career_ids": [
+        10
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 10,
+          "career_title": "Database Administrator",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 3,
+          "career_title": "Data Analyst",
+          "relevance_grade": 1
+        }
+      ],
+      "expected_missing_skills": [
+        "Linux",
+        "Database Security"
+      ],
+      "notes": "SQL-heavy developer; Database Administrator ranks #1, flags Linux and DB Security."
+    },
+    {
+      "case_id": "BENCH-021",
+      "target_profile": "Software Engineer with Weak Data Structures Foundation",
+      "scenario_category": "WEAK_FIT",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "Python",
+          "proficiency": 7,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "Java",
+          "proficiency": 6,
+          "canonical_skill_id": 2
+        },
+        {
+          "skill_name": "Git",
+          "proficiency": 6,
+          "canonical_skill_id": 8
+        },
+        {
+          "skill_name": "Data Structures",
+          "proficiency": 2,
+          "canonical_skill_id": 20
+        }
+      ],
+      "preferred_domains": [
+        "Software Development"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Technology",
+        "specialization": "Computer Science",
+        "cgpa": 7.4
+      },
+      "expected_career_ids": [
+        1
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 1,
+          "career_title": "Software Developer",
+          "relevance_grade": 3
+        }
+      ],
+      "expected_missing_skills": [
+        "SQL"
+      ],
+      "notes": "Data Structures at 2/10 (WEAK gap) and SQL missing; flags Data Structures as weak competency gap."
+    },
+    {
+      "case_id": "BENCH-022",
+      "target_profile": "Full AI Stack Pipeline Engineer",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Python",
+          "proficiency": 9,
+          "canonical_skill_id": 1
+        },
+        {
+          "skill_name": "Machine Learning",
+          "proficiency": 8,
+          "canonical_skill_id": 14
+        },
+        {
+          "skill_name": "Deep Learning",
+          "proficiency": 8,
+          "canonical_skill_id": 15
+        },
+        {
+          "skill_name": "TensorFlow",
+          "proficiency": 8,
+          "canonical_skill_id": 22
+        },
+        {
+          "skill_name": "Statistics",
+          "proficiency": 8,
+          "canonical_skill_id": 24
+        },
+        {
+          "skill_name": "Pandas",
+          "proficiency": 8,
+          "canonical_skill_id": 21
+        }
+      ],
+      "preferred_domains": [
+        "Artificial Intelligence",
+        "Data Science"
+      ],
+      "education_context": {
+        "degree": "Master of Science",
+        "specialization": "Machine Learning",
+        "cgpa": 9.4
+      },
+      "expected_career_ids": [
+        5,
+        4
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 5,
+          "career_title": "AI/ML Engineer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 4,
+          "career_title": "Data Scientist",
+          "relevance_grade": 3
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "AI/ML Engineer #1, Data Scientist #2 with near 100% readiness."
+    },
+    {
+      "case_id": "BENCH-023",
+      "target_profile": "Cisco Infrastructure Specialist Without Routing",
+      "scenario_category": "WEAK_FIT",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "Networking",
+          "proficiency": 8,
+          "canonical_skill_id": 17
+        },
+        {
+          "skill_name": "Linux",
+          "proficiency": 6,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "CCNA",
+          "proficiency": 7,
+          "canonical_skill_id": 27
+        }
+      ],
+      "preferred_domains": [
+        "Networking"
+      ],
+      "education_context": {
+        "degree": "Diploma in Hardware Networking",
+        "specialization": "Networking",
+        "cgpa": 7.5
+      },
+      "expected_career_ids": [
+        9
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 9,
+          "career_title": "Network Engineer",
+          "relevance_grade": 3
+        }
+      ],
+      "expected_missing_skills": [
+        "Routing and Switching",
+        "Network Security"
+      ],
+      "notes": "Flags Routing and Switching and Network Security as missing for Network Engineer."
+    },
+    {
+      "case_id": "BENCH-024",
+      "target_profile": "Cyber Defense Specialist Without SIEM Tooling",
+      "scenario_category": "WEAK_FIT",
+      "proficiency_level": "INTERMEDIATE",
+      "current_skills": [
+        {
+          "skill_name": "Linux",
+          "proficiency": 7,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Networking",
+          "proficiency": 8,
+          "canonical_skill_id": 17
+        },
+        {
+          "skill_name": "Cybersecurity",
+          "proficiency": 8,
+          "canonical_skill_id": 18
+        },
+        {
+          "skill_name": "Python",
+          "proficiency": 6,
+          "canonical_skill_id": 1
+        }
+      ],
+      "preferred_domains": [
+        "Cybersecurity"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Science",
+        "specialization": "Cyber Forensics",
+        "cgpa": 8.3
+      },
+      "expected_career_ids": [
+        8
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 8,
+          "career_title": "Cybersecurity Analyst",
+          "relevance_grade": 3
+        }
+      ],
+      "expected_missing_skills": [
+        "SIEM"
+      ],
+      "notes": "Strong Sec foundations but missing SIEM monitoring tooling; SIEM flagged as primary gap."
+    },
+    {
+      "case_id": "BENCH-025",
+      "target_profile": "Multi-Cloud Deployment Engineer",
+      "scenario_category": "STRONG_FIT",
+      "proficiency_level": "ADVANCED",
+      "current_skills": [
+        {
+          "skill_name": "Linux",
+          "proficiency": 8,
+          "canonical_skill_id": 11
+        },
+        {
+          "skill_name": "Networking",
+          "proficiency": 8,
+          "canonical_skill_id": 17
+        },
+        {
+          "skill_name": "AWS",
+          "proficiency": 8,
+          "canonical_skill_id": 16
+        },
+        {
+          "skill_name": "Docker",
+          "proficiency": 7,
+          "canonical_skill_id": 9
+        },
+        {
+          "skill_name": "Python",
+          "proficiency": 6,
+          "canonical_skill_id": 1
+        }
+      ],
+      "preferred_domains": [
+        "Cloud Computing"
+      ],
+      "education_context": {
+        "degree": "Bachelor of Technology",
+        "specialization": "Cloud Architecture",
+        "cgpa": 8.7
+      },
+      "expected_career_ids": [
+        6
+      ],
+      "relevant_careers": [
+        {
+          "career_id": 6,
+          "career_title": "Cloud Engineer",
+          "relevance_grade": 3
+        },
+        {
+          "career_id": 7,
+          "career_title": "DevOps Engineer",
+          "relevance_grade": 2
+        }
+      ],
+      "expected_missing_skills": [],
+      "notes": "High readiness in Cloud Computing; ranks Cloud Engineer #1 with zero core skill gaps."
+    }
+  ]
+}

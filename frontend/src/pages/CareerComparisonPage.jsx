@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { Spinner, Alert } from '../components/common/UIFeedback';
 import { Badge } from '../components/common/Badge';
 import { RadialGauge } from '../components/common/RadialGauge';
+import { MultiHopTrajectoryExplorer } from '../components/analytics/MultiHopTrajectoryExplorer';
 import {
   CheckCircle2,
   HelpCircle,
@@ -136,6 +137,11 @@ export function CareerComparisonPage() {
 
   const activeTransition = transitionData || transition_analysis;
   const transSummary = activeTransition?.transition_summary;
+
+  const fromId = transitionDirection === 'a_to_b' ? careerAId : careerBId;
+  const toId = transitionDirection === 'a_to_b' ? careerBId : careerAId;
+  const fromCareerTitle = transitionDirection === 'a_to_b' ? career_a?.title : career_b?.title;
+  const toCareerTitle = transitionDirection === 'a_to_b' ? career_b?.title : career_a?.title;
 
   return (
     <div className="space-y-6">
@@ -660,6 +666,16 @@ export function CareerComparisonPage() {
               </div>
             ) : null}
           </div>
+
+          {/* Module 11.5: Multi-Hop Career Trajectory Intelligence */}
+          {toId && fromId && toId !== fromId && (
+            <MultiHopTrajectoryExplorer
+              targetCareerId={toId}
+              fromCareerId={fromId}
+              sourceTitle={fromCareerTitle}
+              targetTitle={toCareerTitle}
+            />
+          )}
 
           {/* Venn Competency Overlap Breakdown */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">

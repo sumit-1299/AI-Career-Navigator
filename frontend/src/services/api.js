@@ -248,6 +248,39 @@ export const api = {
     return request(`/careers/${careerId}/portfolio-recommendations${query}`);
   },
 
+  getCareerAcademicBenchmark: (careerId, options = {}) => {
+    const { program = null, userId = null } = options;
+    const params = new URLSearchParams();
+    if (program) params.append('program', program);
+    if (userId) params.append('user_id', userId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request(`/careers/${careerId}/academic-benchmark${query}`);
+  },
+
+  getCareerIndustryDemand: (careerId, options = {}) => {
+    const { trend = null, demandLevel = null, limit = null, userId = null } = options;
+    const params = new URLSearchParams();
+    if (trend) params.append('trend', trend);
+    if (demandLevel) params.append('demand_level', demandLevel);
+    if (limit) params.append('limit', limit);
+    if (userId) params.append('user_id', userId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request(`/careers/${careerId}/industry-demand${query}`);
+  },
+
+  getCareerTrajectory: (careerId, options = {}) => {
+    const { fromCareerId = null, objective = 'BEST_FIT', maxHops = 3, limit = 3, userId = null } = options;
+    const params = new URLSearchParams();
+    if (fromCareerId) params.append('from_career_id', fromCareerId);
+    if (objective) params.append('objective', objective);
+    if (maxHops) params.append('max_hops', maxHops);
+    if (limit) params.append('limit', limit);
+    if (userId) params.append('user_id', userId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request(`/careers/${careerId}/trajectory${query}`);
+  },
+
+
 
   getCareerAnalytics: (careerId) => request(`/careers/${careerId}/analytics`),
 

@@ -19,6 +19,14 @@ from services.career_comparison_service import CareerComparisonService
 from services.student_analytics_service import StudentAnalyticsService
 from services.skill_roi_service import SkillRoiService
 from services.portfolio_project_service import PortfolioProjectService
+from services.academic_benchmark_service import AcademicBenchmarkService
+from services.industry_demand_service import IndustryDemandService
+from services.career_trajectory_service import CareerTrajectoryService
+from services.interview_simulation_service import InterviewSimulationService
+from services.recommendation_evaluation_service import (
+    RecommendationEvaluationService,
+    EvaluationSkill,
+)
 
 __all__ = [
     "SkillGapService",
@@ -34,4 +42,10 @@ __all__ = [
     "StudentAnalyticsService",
     "SkillRoiService",
     "PortfolioProjectService",
+    "AcademicBenchmarkService",
+    "IndustryDemandService",
+    "CareerTrajectoryService",
+    "InterviewSimulationService",
+    "RecommendationEvaluationService",
+    "EvaluationSkill",
 ]
