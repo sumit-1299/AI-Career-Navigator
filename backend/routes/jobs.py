@@ -1,4 +1,11 @@
-"""Live tech-job search across public Greenhouse, Ashby and Lever sources."""
+"""Live technology-job search across public Greenhouse, Ashby and Lever sources.
+
+Public behavior:
+- GET /api/jobs is publicly readable.
+- GET /api/jobs/<source>/<provider_id> is publicly readable.
+- POST /api/jobs/<source>/<provider_id>/compare remains authenticated because
+  comparison snapshots are tied to a candidate account and its evidence.
+"""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -22,15 +29,11 @@ jobs_bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
 @jobs_bp.after_request
 def private_response(response):
+    # Public job browsing can still be cached by the browser/CDN according to
+    # normal HTTP rules. We deliberately keep the response fresh because the
+    # underlying employer feeds are live.
     response.headers["Cache-Control"] = "no-store"
     return response
-
-
-@jobs_bp.before_request
-@jwt_required()
-def account_required():
-    if current_user_id() is None:
-        return error("The candidate account is unavailable. Log in again.", 401)
 
 
 def _live_record(source_key, fetched, job, retrieved_at):
@@ -82,9 +85,6 @@ def fetch_live_source(source_key, logger=None):
             "jobs": records,
         }
     except (FeedUnavailable, ValueError) as exc:
-        # IMPORTANT: this function runs inside a ThreadPoolExecutor worker.
-        # current_app is unavailable there, so use the logger passed by the
-        # request thread instead of touching Flask's application context.
         if logger is not None:
             logger.warning(
                 "Could not retrieve live source %s: %s",
@@ -106,12 +106,7 @@ def fetch_live_source(source_key, logger=None):
 
 
 def fetch_requested_sources(source_key=None):
-    """Fetch selected public sources concurrently.
-
-    The request thread captures the Flask logger first. Worker threads receive
-    that logger as a plain object, avoiding the application-context error that
-    caused the 500 response in the previous version.
-    """
+    """Fetch selected public sources concurrently."""
     source_keys = [source_key] if source_key else list(SOURCE_REGISTRY)
     if not source_keys:
         return {}
@@ -131,8 +126,8 @@ def fetch_requested_sources(source_key=None):
     return results
 
 
-# Backwards-compatible alias for earlier code.
 def fetch_requested_boards(board=None):
+    """Backwards-compatible alias for earlier code."""
     mapping = {
         "canonical": "greenhouse-canonical",
         "razorpaysoftwareprivatelimited": "greenhouse-razorpay",
@@ -141,7 +136,15 @@ def fetch_requested_boards(board=None):
     return fetch_requested_sources(source_key)
 
 
-def _filter_jobs(records, query="", location="", work_mode="", experience="", technology="", provider=""):
+def _filter_jobs(
+    records,
+    query="",
+    location="",
+    work_mode="",
+    experience="",
+    technology="",
+    provider="",
+):
     query = query.casefold().strip()
     location = location.casefold().strip()
     work_mode = work_mode.casefold().strip()
@@ -169,7 +172,9 @@ def _filter_jobs(records, query="", location="", work_mode="", experience="", te
             continue
         if experience and experience != job.get("experience_level", "").casefold():
             continue
-        if technology and technology not in [tag.casefold() for tag in job.get("tech_tags", [])]:
+        if technology and technology not in [
+            tag.casefold() for tag in job.get("tech_tags", [])
+        ]:
             continue
         if provider and provider != job.get("provider", "").casefold():
             continue
@@ -177,8 +182,11 @@ def _filter_jobs(records, query="", location="", work_mode="", experience="", te
         relevance = 0
         if query and query in job["title"].casefold():
             relevance += 3
-        if technology and technology in [tag.casefold() for tag in job.get("tech_tags", [])]:
+        if technology and technology in [
+            tag.casefold() for tag in job.get("tech_tags", [])
+        ]:
             relevance += 2
+
         filtered.append((relevance, job))
 
     filtered.sort(
@@ -193,17 +201,35 @@ def _filter_jobs(records, query="", location="", work_mode="", experience="", te
 
 
 def _facets(records):
-    locations = sorted({job["location"] for job in records if job["location"]})
+    locations = sorted(
+        {job["location"] for job in records if job["location"]}
+    )
     technologies = sorted(
-        {tag for job in records for tag in job.get("tech_tags", [])},
+        {
+            tag
+            for job in records
+            for tag in job.get("tech_tags", [])
+        },
         key=str.casefold,
     )
-    work_modes = sorted({job.get("work_mode", "Not specified") for job in records})
+    work_modes = sorted(
+        {job.get("work_mode", "Not specified") for job in records}
+    )
     experience_levels = sorted(
-        {job.get("experience_level", "Not specified") for job in records},
+        {
+            job.get("experience_level", "Not specified")
+            for job in records
+        },
         key=str.casefold,
     )
-    providers = sorted({job.get("provider", "") for job in records if job.get("provider")})
+    providers = sorted(
+        {
+            job.get("provider", "")
+            for job in records
+            if job.get("provider")
+        }
+    )
+
     return {
         "locations": locations,
         "technologies": technologies,
@@ -216,7 +242,7 @@ def _facets(records):
 @jobs_bp.get("")
 def listings():
     source_key = request.args.get("source", "").strip()
-    # Compatibility: old frontend used ?board=canonical.
+
     old_board = request.args.get("board", "").strip()
     if old_board:
         source_key = {
@@ -228,7 +254,10 @@ def listings():
     location = request.args.get("location", "").strip()
     work_mode = request.args.get("work_mode", "").strip()
     experience = request.args.get("experience", "").strip()
-    technology = request.args.get("technology", request.args.get("tech", "")).strip()
+    technology = request.args.get(
+        "technology",
+        request.args.get("tech", ""),
+    ).strip()
     provider = request.args.get("provider", "").strip()
 
     try:
@@ -239,12 +268,27 @@ def listings():
     if source_key and source_key not in SOURCE_REGISTRY:
         return error("Choose a configured live job source.", 400)
 
-    if any(len(value) > 100 for value in [query, location, work_mode, experience, technology, provider]):
-        return error("Search filters may contain at most 100 characters.", 400)
+    if any(
+        len(value) > 100
+        for value in [
+            query,
+            location,
+            work_mode,
+            experience,
+            technology,
+            provider,
+        ]
+    ):
+        return error(
+            "Search filters may contain at most 100 characters.",
+            400,
+        )
+
     if page < 1 or page > 10000:
         return error("Page must be a positive integer.", 400)
 
     source_results = fetch_requested_sources(source_key or None)
+
     all_jobs = []
     for result in source_results.values():
         all_jobs.extend(result["jobs"])
@@ -271,13 +315,16 @@ def listings():
         "status": "success",
         "source": "live_multi_provider",
         "tech_only": True,
-        "search_scope_note": "Technology-focused vacancies only. Non-technical postings are excluded before results are returned.",
+        "public_browsing": True,
+        "search_scope_note": (
+            "Technology-focused vacancies only. "
+            "Non-technical postings are excluded before results are returned."
+        ),
         "jobs": page_jobs,
         "total": total,
         "page": page,
         "page_size": page_size,
         "sources": sources,
-        # Compatibility for earlier UI code.
         "boards": [
             {
                 "board": item["source_key"],
@@ -287,7 +334,10 @@ def listings():
                 "available": item["available"],
                 "retrieved_at": item["retrieved_at"],
                 "listed_count": item["listed_count"],
-                "prospect_count": item.get("non_tech_excluded_count", 0),
+                "prospect_count": item.get(
+                    "non_tech_excluded_count",
+                    0,
+                ),
                 "last_error": item["last_error"],
             }
             for item in sources
@@ -313,25 +363,34 @@ def item(source_key, provider_id):
         return error("Invalid provider posting identifier.", 400)
 
     result = fetch_requested_sources(source_key).get(source_key)
+
     if not result or not result["available"]:
         return error(
-            (result or {}).get("last_error") or "The live employer source could not be reached.",
+            (result or {}).get("last_error")
+            or "The live employer source could not be reached.",
             503,
         )
 
     job = next(
-        (item for item in result["jobs"] if item["provider_id"] == provider_id),
+        (
+            item
+            for item in result["jobs"]
+            if item["provider_id"] == provider_id
+        ),
         None,
     )
+
     if job is None:
         return error(
-            "This posting is no longer present on the live employer source. Return to Find Tech Jobs and refresh.",
+            "This posting is no longer present on the live employer source. "
+            "Return to Find Tech Jobs and refresh.",
             404,
         )
 
     return {
         "status": "success",
         "source": "live_multi_provider",
+        "public_browsing": True,
         "job": job,
         "source_info": {
             key: value
@@ -346,44 +405,78 @@ def item(source_key, provider_id):
             "available": result["available"],
             "retrieved_at": result["retrieved_at"],
             "listed_count": result["listed_count"],
-            "prospect_count": result.get("non_tech_excluded_count", 0),
+            "prospect_count": result.get(
+                "non_tech_excluded_count",
+                0,
+            ),
             "last_error": result["last_error"],
         },
     }
 
 
 @jobs_bp.post("/<source_key>/<path:provider_id>/compare")
+@jwt_required()
 def compare(source_key, provider_id):
+    user_id = current_user_id()
+
+    if user_id is None:
+        return error(
+            "The candidate account is unavailable. Log in again.",
+            401,
+        )
+
     if source_key not in SOURCE_REGISTRY:
         return error("Live job source not configured.", 404)
+
     if not provider_id or len(provider_id) > 300:
         return error("Invalid provider posting identifier.", 400)
 
     body = request.get_json(silent=True)
-    if not isinstance(body, dict) or set(body) != {"submission_id", "mode"}:
-        return error("Send only submission_id and mode.", 400)
+
+    if not isinstance(body, dict) or set(body) != {
+        "submission_id",
+        "mode",
+    }:
+        return error(
+            "Send only submission_id and mode.",
+            400,
+        )
 
     try:
         key = submission_id(body["submission_id"])
-        if not isinstance(body["mode"], str) or body["mode"] not in {"keyword", "semantic"}:
-            raise ValueError("Choose keyword or semantic comparison mode.")
+
+        if (
+            not isinstance(body["mode"], str)
+            or body["mode"] not in {"keyword", "semantic"}
+        ):
+            raise ValueError(
+                "Choose keyword or semantic comparison mode."
+            )
     except ValueError as exc:
         return error(str(exc), 400)
 
     result = fetch_requested_sources(source_key).get(source_key)
+
     if not result or not result["available"]:
         return error(
-            (result or {}).get("last_error") or "The live employer source could not be reached.",
+            (result or {}).get("last_error")
+            or "The live employer source could not be reached.",
             503,
         )
 
     current_job = next(
-        (item for item in result["jobs"] if item["provider_id"] == provider_id),
+        (
+            item
+            for item in result["jobs"]
+            if item["provider_id"] == provider_id
+        ),
         None,
     )
+
     if current_job is None:
         return error(
-            "This posting is no longer present on the live employer source. Refresh and choose another role.",
+            "This posting is no longer present on the live employer source. "
+            "Refresh and choose another role.",
             409,
         )
 
@@ -398,19 +491,27 @@ def compare(source_key, provider_id):
         "employer": current_job["employer"],
         "provider_id": current_job["provider_id"],
         "location": current_job["location"],
-        "work_mode": current_job.get("work_mode", "Not specified"),
-        "experience_level": current_job.get("experience_level", "Not specified"),
+        "work_mode": current_job.get(
+            "work_mode",
+            "Not specified",
+        ),
+        "experience_level": current_job.get(
+            "experience_level",
+            "Not specified",
+        ),
         "tech_tags": current_job.get("tech_tags", []),
         "posting_version": 1,
         "content_hash": current_job["content_hash"],
-        "provider_updated_at": current_job.get("provider_updated_at"),
+        "provider_updated_at": current_job.get(
+            "provider_updated_at"
+        ),
         "last_seen_at": current_job["retrieved_at"],
         "stale_at_comparison": False,
         "source_captured_at": iso_utc(utc_now()),
     }
 
     return save_comparison(
-        current_user_id(),
+        user_id,
         key,
         job,
         body["mode"],

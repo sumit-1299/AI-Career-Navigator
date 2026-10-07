@@ -1,14 +1,9 @@
-/**
- * Centralized API client service for AI Career Navigator.
- * Connects React frontend directly to Flask REST API backend.
- */
-
 const API_BASE = '/api';
 
 function getToken() {
   try {
     return localStorage.getItem('career_navigator_token');
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -20,44 +15,44 @@ export function setToken(token) {
     } else {
       localStorage.removeItem('career_navigator_token');
     }
-  } catch (e) {
-    console.warn('LocalStorage access restricted', e);
-  }
+  } catch {}
 }
 
 async function request(endpoint, options = {}) {
   const token = getToken();
-  const headers = options.headers ? { ...options.headers } : {};
+  const headers = { ...(options.headers || {}) };
 
-  // Don't set Content-Type for FormData (browser sets boundary automatically)
   if (!(options.body instanceof FormData) && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers.Authorization = `Bearer ${token}`;
   }
 
-  const config = {
-    ...options,
-    headers,
-  };
-
   try {
-    const response = await fetch(`${API_BASE}${endpoint}`, config);
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
 
-    let data;
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      data = { message: text };
-    }
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+      ? await response.json()
+      : { message: await response.text() };
 
     if (!response.ok) {
-      const errorMsg = data?.message || data?.error || `HTTP ${response.status} Error`;
-      const error = new Error(errorMsg);
+      if (response.status === 401 && token) {
+        try {
+          localStorage.removeItem('career_navigator_token');
+          localStorage.removeItem('career_navigator_user');
+        } catch {}
+        window.dispatchEvent(new CustomEvent('career-navigator:unauthorized'));
+      }
+
+      const error = new Error(
+        data?.message || data?.error || `HTTP ${response.status} Error`
+      );
       error.status = response.status;
       error.data = data;
       throw error;
@@ -65,9 +60,10 @@ async function request(endpoint, options = {}) {
 
     return data;
   } catch (err) {
-    // Re-throw with consistent shape so UI try/catch can display friendly messages
     if (!err.status && err.name === 'TypeError') {
-      const networkError = new Error('Network error: Unable to connect to backend server.');
+      const networkError = new Error(
+        'Unable to reach the Career Navigator server.'
+      );
       networkError.status = 0;
       throw networkError;
     }
@@ -87,6 +83,18 @@ export const api = {
     request('/register', {
       method: 'POST',
       body: JSON.stringify({ name, email, password }),
+    }),
+
+  forgotPassword: (email) =>
+    request('/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token, password) =>
+    request('/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
     }),
 
   // Student Academic Profile
@@ -139,6 +147,7 @@ export const api = {
         body: formData,
       });
     }
+
     return request('/skills/extract-resume', {
       method: 'POST',
       body: JSON.stringify({ resume_text: input }),
@@ -147,6 +156,7 @@ export const api = {
 
   scoreResume: (careerId, input) => {
     const endpoint = `/skills/extract-resume/score?career_id=${careerId}`;
+
     if (input instanceof File) {
       const formData = new FormData();
       formData.append('file', input);
@@ -155,7 +165,9 @@ export const api = {
         body: formData,
       });
     }
+
     const body = typeof input === 'string' ? { resume_text: input } : input;
+
     return request(endpoint, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -171,88 +183,103 @@ export const api = {
   // Careers & Intelligence
   listCareers: () => request('/careers'),
 
-  getCareerDetail: (careerId) => request(`/careers/${careerId}`),
+  getCareerDetail: (careerId) =>
+    request(`/careers/${careerId}`),
 
   getCareerRecommendations: (domain = null, limit = null) => {
-    let query = '';
     const params = new URLSearchParams();
+
     if (domain) params.append('domain', domain);
     if (limit) params.append('limit', limit);
-    if (params.toString()) query = `?${params.toString()}`;
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+
     return request(`/careers/recommendations${query}`);
   },
 
-  getSkillGap: (careerId) => request(`/careers/${careerId}/skill-gap`),
+  getSkillGap: (careerId) =>
+    request(`/careers/${careerId}/skill-gap`),
 
   getRoadmap: (careerId, hoursPerWeek = null) => {
-    const query = hoursPerWeek ? `?hours_per_week=${hoursPerWeek}` : '';
+    const query = hoursPerWeek
+      ? `?hours_per_week=${hoursPerWeek}`
+      : '';
+
     return request(`/careers/${careerId}/roadmap${query}`);
   },
 
   compareCareers: (careerAId, careerBId) =>
-    request(`/careers/compare?career_a_id=${careerAId}&career_b_id=${careerBId}`),
+    request(
+      `/careers/compare?career_a_id=${careerAId}&career_b_id=${careerBId}`
+    ),
 
   getCareerPathways: (careerId, options = {}) => {
     const { hoursPerWeek = 10, userId = null } = options;
     const params = new URLSearchParams();
+
     if (hoursPerWeek) params.append('hours_per_week', hoursPerWeek);
     if (userId) params.append('user_id', userId);
+
     const query = params.toString() ? `?${params.toString()}` : '';
+
     return request(`/careers/${careerId}/pathways${query}`);
   },
 
-  simulateSkillImpact: (careerId, options = {}) => {
-    const { skillId, skillName, simulatedLevel, hoursPerWeek = 10, userId = null } = options;
-    return request(`/careers/${careerId}/simulate-skill`, {
+  simulateSkillImpact: (careerId, options = {}) =>
+    request(`/careers/${careerId}/simulate-skill`, {
       method: 'POST',
       body: JSON.stringify({
-        skill_id: skillId,
-        skill_name: skillName,
-        simulated_level: simulatedLevel,
-        hours_per_week: hoursPerWeek,
-        user_id: userId,
+        skill_id: options.skillId,
+        skill_name: options.skillName,
+        simulated_level: options.simulatedLevel,
+        hours_per_week: options.hoursPerWeek ?? 10,
+        user_id: options.userId ?? null,
       }),
-    });
-  },
+    }),
 
   getCareerSkillRoi: (careerId, options = {}) => {
     const { hoursPerWeek = 10, userId = null } = options;
     const params = new URLSearchParams();
+
     if (hoursPerWeek) params.append('hours_per_week', hoursPerWeek);
     if (userId) params.append('user_id', userId);
+
     const query = params.toString() ? `?${params.toString()}` : '';
+
     return request(`/careers/${careerId}/skill-roi${query}`);
   },
 
-  runCounterfactualAnalysis: (careerId, options = {}) => {
-    const { skillId, skillName, targetLevel = null, hoursPerWeek = 10, userId = null } = options;
-    return request(`/careers/${careerId}/counterfactual`, {
+  runCounterfactualAnalysis: (careerId, options = {}) =>
+    request(`/careers/${careerId}/counterfactual`, {
       method: 'POST',
       body: JSON.stringify({
-        skill_id: skillId,
-        skill_name: skillName,
-        target_level: targetLevel,
-        hours_per_week: hoursPerWeek,
-        user_id: userId,
+        skill_id: options.skillId,
+        skill_name: options.skillName,
+        target_level: options.targetLevel ?? null,
+        hours_per_week: options.hoursPerWeek ?? 10,
+        user_id: options.userId ?? null,
       }),
-    });
-  },
+    }),
 
   getPortfolioProjectRecommendations: (careerId, options = {}) => {
     const { difficulty = null, limit = null, userId = null } = options;
     const params = new URLSearchParams();
+
     if (difficulty) params.append('difficulty', difficulty);
     if (limit) params.append('limit', limit);
     if (userId) params.append('user_id', userId);
+
     const query = params.toString() ? `?${params.toString()}` : '';
+
     return request(`/careers/${careerId}/portfolio-recommendations${query}`);
   },
 
-
-  getCareerAnalytics: (careerId) => request(`/careers/${careerId}/analytics`),
+  getCareerAnalytics: (careerId) =>
+    request(`/careers/${careerId}/analytics`),
 
   getCareerReadinessSummary: (careerId, options = {}) => {
     const { hoursPerWeek = 10, resumeText = null } = options;
+
     if (resumeText) {
       return request(`/careers/${careerId}/readiness-summary`, {
         method: 'POST',
@@ -262,13 +289,21 @@ export const api = {
         }),
       });
     }
-    const query = hoursPerWeek ? `?hours_per_week=${hoursPerWeek}` : '';
+
+    const query = hoursPerWeek
+      ? `?hours_per_week=${hoursPerWeek}`
+      : '';
+
     return request(`/careers/${careerId}/readiness-summary${query}`);
   },
 
   // Career Market Outlook
-  getCareerMarketOutlook: (careerId) => request(`/careers/${careerId}/market-outlook`),
-  listMarketOutlooks: () => request('/careers/market-outlook'),
+  getCareerMarketOutlook: (careerId) =>
+    request(`/careers/${careerId}/market-outlook`),
+
+  listMarketOutlooks: () =>
+    request('/careers/market-outlook'),
+
   compareMarketOutlooks: (careerIds) =>
     request('/careers/market-outlook/compare', {
       method: 'POST',
@@ -278,28 +313,54 @@ export const api = {
   // Learning Resources & Progress
   listLearningResources: (params = {}) => {
     const q = new URLSearchParams();
-    if (params.canonical_skill_id) q.append('canonical_skill_id', params.canonical_skill_id);
-    if (params.difficulty) q.append('difficulty', params.difficulty);
-    if (params.type) q.append('type', params.type);
-    if (params.q) q.append('q', params.q);
-    const queryString = q.toString() ? `?${q.toString()}` : '';
+
+    if (params.canonical_skill_id) {
+      q.append('canonical_skill_id', params.canonical_skill_id);
+    }
+
+    if (params.difficulty) {
+      q.append('difficulty', params.difficulty);
+    }
+
+    if (params.type) {
+      q.append('type', params.type);
+    }
+
+    if (params.q) {
+      q.append('q', params.q);
+    }
+
+    const queryString = q.toString()
+      ? `?${q.toString()}`
+      : '';
+
     return request(`/learning-resources${queryString}`);
   },
 
   startLearningResource: (resourceId) =>
-    request(`/learning-resources/${resourceId}/start`, { method: 'POST' }),
+    request(`/learning-resources/${resourceId}/start`, {
+      method: 'POST',
+    }),
 
   updateLearningProgress: (resourceId, progress_percentage, notes = null) =>
     request(`/learning-resources/${resourceId}/progress`, {
       method: 'PUT',
-      body: JSON.stringify({ progress_percentage, notes }),
+      body: JSON.stringify({
+        progress_percentage,
+        notes,
+      }),
     }),
 
   completeLearningResource: (resourceId) =>
-    request(`/learning-resources/${resourceId}/complete`, { method: 'POST' }),
+    request(`/learning-resources/${resourceId}/complete`, {
+      method: 'POST',
+    }),
 
   getUserLearningProgress: (status = null) => {
-    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    const query = status
+      ? `?status=${encodeURIComponent(status)}`
+      : '';
+
     return request(`/learning-resources/progress${query}`);
   },
 
