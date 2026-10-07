@@ -28,6 +28,7 @@ from services.readiness_summary_service import ReadinessSummaryService
 from services.career_pathway_service import CareerPathwayService
 from services.career_simulator_service import CareerSimulatorService
 from services.skill_roi_service import SkillRoiService
+from services.portfolio_project_service import PortfolioProjectService
 
 careers_bp = Blueprint("careers", __name__, url_prefix="/api/careers")
 
@@ -919,6 +920,46 @@ def run_skill_counterfactual(career_id):
             "code": result.get("error"),
             "message": result.get("message", "Counterfactual evaluation failed")
         }), status_code
+
+    return jsonify({
+        "status": "success",
+        **result
+    }), 200
+
+
+@careers_bp.route("/<int:career_id>/portfolio-recommendations", methods=["GET"])
+@jwt_required(optional=True)
+def get_career_portfolio_recommendations(career_id):
+    """
+    Module 11.2: Actionable Portfolio & Capstone Project Recommendations.
+    Returns tailored projects based on career requirements, student missing/weak skills,
+    readiness level, and Phase 11.1 Skill ROI quick wins.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with id {career_id} not found"
+        }), 404
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else request.args.get("user_id", type=int)
+
+    difficulty_filter = request.args.get("difficulty")
+    limit = request.args.get("limit", default=None, type=int)
+
+    result = PortfolioProjectService.recommend_projects_for_career(
+        career_id=career_id,
+        user_id=user_id,
+        difficulty_filter=difficulty_filter,
+        limit=limit
+    )
+
+    if "error" in result:
+        return jsonify({
+            "status": "error",
+            "message": result.get("message", "Failed to retrieve portfolio recommendations")
+        }), 404
 
     return jsonify({
         "status": "success",

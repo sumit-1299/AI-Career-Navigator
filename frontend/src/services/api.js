@@ -238,6 +238,16 @@ export const api = {
     });
   },
 
+  getPortfolioProjectRecommendations: (careerId, options = {}) => {
+    const { difficulty = null, limit = null, userId = null } = options;
+    const params = new URLSearchParams();
+    if (difficulty) params.append('difficulty', difficulty);
+    if (limit) params.append('limit', limit);
+    if (userId) params.append('user_id', userId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request(`/careers/${careerId}/portfolio-recommendations${query}`);
+  },
+
 
   getCareerAnalytics: (careerId) => request(`/careers/${careerId}/analytics`),
 

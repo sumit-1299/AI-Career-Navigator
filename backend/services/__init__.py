@@ -18,6 +18,7 @@ from services.resume_extraction_service import ResumeExtractionService
 from services.career_comparison_service import CareerComparisonService
 from services.student_analytics_service import StudentAnalyticsService
 from services.skill_roi_service import SkillRoiService
+from services.portfolio_project_service import PortfolioProjectService
 
 __all__ = [
     "SkillGapService",
@@ -32,4 +33,5 @@ __all__ = [
     "CareerComparisonService",
     "StudentAnalyticsService",
     "SkillRoiService",
+    "PortfolioProjectService",
 ]

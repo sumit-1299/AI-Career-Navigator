@@ -29,6 +29,9 @@ import {
   TrendingUp,
   Zap,
   Sliders,
+  FolderGit2,
+  Code2,
+  CheckSquare,
 } from 'lucide-react';
 
 export function SkillGapPage() {
@@ -63,6 +66,10 @@ export function SkillGapPage() {
   const [counterfactualResult, setCounterfactualResult] = useState(null);
   const [runningCounterfactual, setRunningCounterfactual] = useState(false);
 
+  // Module 11.2: Actionable Portfolio & Capstone Projects State
+  const [portfolioData, setPortfolioData] = useState(null);
+  const [projectDifficultyFilter, setProjectDifficultyFilter] = useState('ALL');
+
   useEffect(() => {
     loadData();
   }, [activeCareerId]);
@@ -78,7 +85,7 @@ export function SkillGapPage() {
         console.warn('Could not load careers', e);
       }
 
-      const [gapRes, roadRes, pathRes, roiRes] = await Promise.all([
+      const [gapRes, roadRes, pathRes, roiRes, portfolioRes] = await Promise.all([
         api.getSkillGap(activeCareerId).catch((e) => {
           console.warn('Skill gap fetch failed', e);
           return null;
@@ -95,12 +102,17 @@ export function SkillGapPage() {
           console.warn('Skill ROI fetch failed', e);
           return null;
         }),
+        api.getPortfolioProjectRecommendations(activeCareerId).catch((e) => {
+          console.warn('Portfolio recommendations fetch failed', e);
+          return null;
+        }),
       ]);
 
       setGapData(gapRes);
       setRoadmapData(roadRes);
       setPathwaysData(pathRes);
       setRoiData(roiRes);
+      setPortfolioData(portfolioRes);
       if (pathRes?.recommended_pathway_id) {
         setSelectedPathwayId(pathRes.recommended_pathway_id);
       } else if (pathRes?.pathways?.[0]?.id) {
@@ -471,6 +483,31 @@ export function SkillGapPage() {
               {roiData?.quickest_win?.readiness_gain > 0 ? (
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">
                   Top ROI: +{roiData.quickest_win.readiness_gain}%
+                </span>
+              ) : null}
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('projects');
+                setSearchParams((prev) => {
+                  const p = new URLSearchParams(prev);
+                  p.set('tab', 'projects');
+                  return p;
+                });
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 transition ${
+                activeTab === 'projects'
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <FolderGit2 className="w-4 h-4 text-primary-400" />
+              Capstone & Portfolio Projects
+              {portfolioData?.total_projects_count ? (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  activeTab === 'projects' ? 'bg-primary-700 text-white' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {portfolioData.total_projects_count}
                 </span>
               ) : null}
             </button>
@@ -2201,6 +2238,291 @@ export function SkillGapPage() {
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: Actionable Portfolio & Capstone Projects */}
+          {activeTab === 'projects' && (
+            <div className="space-y-6">
+              {/* Header Overview Card */}
+              <div className="bg-linear-to-br from-indigo-900 via-slate-900 to-slate-900 text-white rounded-2xl p-6 shadow-md relative overflow-hidden">
+                <div className="relative z-10 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 flex items-center gap-1.5">
+                        <FolderGit2 className="w-3.5 h-3.5" />
+                        Phase 11.2 Capstone Engine
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-white/10 text-slate-300">
+                        {portfolioData?.career_title || selectedCareer?.title}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-300">
+                      <span>
+                        Target Readiness: <strong className="text-white font-extrabold">{score}%</strong>
+                      </span>
+                      <span>•</span>
+                      <span>
+                        Catalog: <strong className="text-white font-extrabold">{portfolioData?.recommendations?.length || 0}</strong> projects
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xl font-black text-white">
+                      Actionable Portfolio & Capstone Project Recommendations
+                    </h3>
+                    <p className="text-xs text-indigo-200 mt-1 max-w-3xl leading-relaxed">
+                      Bridge verified competency deficits with production-grade capstone projects. Each project is deterministically ranked to maximize skill-gap closure, ROI-weighted competencies, and tangible proof-of-work deliverables that demonstrate mastery to hiring managers.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quickest Gap Closer Highlight Card */}
+              {portfolioData?.quickest_gap_closer && (
+                <div className="bg-linear-to-r from-emerald-50 via-teal-50/60 to-white border-2 border-emerald-300 rounded-2xl p-5 shadow-sm space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-600 text-white flex items-center gap-1 shadow-2xs">
+                        <Zap className="w-3.5 h-3.5" />
+                        Top Recommended Project: Quickest Gap Closer
+                      </span>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                        portfolioData.quickest_gap_closer.difficulty === 'Beginner'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : portfolioData.quickest_gap_closer.difficulty === 'Intermediate'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-purple-100 text-purple-800'
+                      }`}>
+                        {portfolioData.quickest_gap_closer.difficulty}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-bold text-slate-500">
+                        Match Score: <strong className="text-emerald-700 font-black">{portfolioData.quickest_gap_closer.recommendation_score}/100</strong>
+                      </span>
+                      <span className="text-xs font-bold text-slate-500">
+                        Appeal: <strong className="text-slate-800 font-black">{portfolioData.quickest_gap_closer.portfolio_value}/100</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-base font-black text-slate-900">
+                      {portfolioData.quickest_gap_closer.title}
+                    </h4>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      {portfolioData.quickest_gap_closer.description}
+                    </p>
+                  </div>
+
+                  {/* Addressed gaps & reasoning */}
+                  <div className="bg-white/80 rounded-xl p-3 border border-emerald-200/80 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-bold text-slate-700">Addresses Competencies:</span>
+                      {portfolioData.quickest_gap_closer.missing_skills_addressed?.map((s) => (
+                        <span key={s} className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1">
+                          <AlertCircle className="w-2.5 h-2.5" /> {s} (Missing Gap)
+                        </span>
+                      ))}
+                      {portfolioData.quickest_gap_closer.weak_skills_addressed?.map((s) => (
+                        <span key={s} className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1">
+                          <TrendingUp className="w-2.5 h-2.5" /> {s} (Weak Skill)
+                        </span>
+                      ))}
+                      {portfolioData.quickest_gap_closer.addresses_quickest_win && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                          <Zap className="w-2.5 h-2.5 text-emerald-600" /> Quickest Win Aligned
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-emerald-900 font-medium">
+                      <span className="font-bold text-emerald-950">Why Build This First: </span>
+                      {portfolioData.quickest_gap_closer.recommendation_reason}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Filter controls */}
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Difficulty Filter:</span>
+                  {['ALL', 'BEGINNER', 'INTERMEDIATE', 'ADVANCED'].map((diff) => {
+                    const count = diff === 'ALL'
+                      ? (portfolioData?.recommendations?.length || 0)
+                      : (portfolioData?.recommendations?.filter(p => p.difficulty.toUpperCase() === diff).length || 0);
+                    return (
+                      <button
+                        key={diff}
+                        type="button"
+                        onClick={() => setProjectDifficultyFilter(diff)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                          projectDifficultyFilter === diff
+                            ? 'bg-slate-900 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {diff.charAt(0) + diff.slice(1).toLowerCase()}
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                          projectDifficultyFilter === diff ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="text-xs font-medium text-slate-500">
+                  Showing {
+                    portfolioData?.recommendations?.filter(
+                      p => projectDifficultyFilter === 'ALL' || p.difficulty.toUpperCase() === projectDifficultyFilter
+                    ).length || 0
+                  } recommended projects
+                </div>
+              </div>
+
+              {/* Complete Deterministic Project Recommendations List */}
+              <div className="space-y-4">
+                {(!portfolioData?.recommendations || portfolioData.recommendations.length === 0) ? (
+                  <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center text-slate-500 text-sm">
+                    No portfolio projects currently mapped for this career track.
+                  </div>
+                ) : (
+                  portfolioData.recommendations
+                    .filter(p => projectDifficultyFilter === 'ALL' || p.difficulty.toUpperCase() === projectDifficultyFilter)
+                    .map((project, index) => {
+                      const diffBadgeColor =
+                        project.difficulty === 'Beginner'
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                          : project.difficulty === 'Intermediate'
+                          ? 'bg-amber-100 text-amber-800 border-amber-200'
+                          : 'bg-purple-100 text-purple-800 border-purple-200';
+
+                      return (
+                        <div
+                          key={project.project_id}
+                          className="bg-white rounded-2xl p-6 border border-slate-200 hover:border-indigo-300 hover:shadow-md transition space-y-4"
+                        >
+                          {/* Card Header */}
+                          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                            <div className="space-y-1.5 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
+                                  #{index + 1}
+                                </span>
+                                <h4 className="text-base font-black text-slate-900">
+                                  {project.title}
+                                </h4>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${diffBadgeColor}`}>
+                                  {project.difficulty}
+                                </span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                                  {project.domain}
+                                </span>
+                                {project.addresses_quickest_win && (
+                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                                    <Zap className="w-3 h-3 text-emerald-600" /> Quickest Win
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-600 leading-relaxed">
+                                {project.description}
+                              </p>
+                            </div>
+
+                            {/* Metrics pill */}
+                            <div className="flex md:flex-col items-end gap-2 shrink-0 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                              <div className="text-right">
+                                <span className="text-xs font-bold text-slate-400 block">Match Score</span>
+                                <span className="text-sm font-black text-indigo-700">
+                                  {project.recommendation_score} / 100
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] font-bold text-slate-400 block">Effort / Appeal</span>
+                                <span className="text-xs font-extrabold text-slate-700">
+                                  ~{project.estimated_hours}h • {project.portfolio_value} Appeal
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Competency Badges */}
+                          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
+                            <span className="text-[11px] font-bold text-slate-500 mr-1">Skills Demonstrated:</span>
+                            {project.demonstrated_skills?.map((s) => {
+                              const isMissing = project.missing_skills_addressed?.includes(s);
+                              const isWeak = project.weak_skills_addressed?.includes(s);
+                              const isCovered = project.covered_career_skills?.includes(s);
+
+                              let badgeStyle = "bg-slate-100 text-slate-700 border-slate-200";
+                              if (isMissing) {
+                                badgeStyle = "bg-rose-100 text-rose-800 border-rose-300 font-black";
+                              } else if (isWeak) {
+                                badgeStyle = "bg-amber-100 text-amber-800 border-amber-300 font-bold";
+                              } else if (isCovered) {
+                                badgeStyle = "bg-indigo-50 text-indigo-800 border-indigo-200 font-bold";
+                              }
+
+                              return (
+                                <span
+                                  key={s}
+                                  className={`px-2 py-0.5 rounded-md text-[11px] border flex items-center gap-1 ${badgeStyle}`}
+                                >
+                                  {isMissing && <AlertCircle className="w-2.5 h-2.5 text-rose-600" />}
+                                  {isWeak && <TrendingUp className="w-2.5 h-2.5 text-amber-600" />}
+                                  {isCovered && !isMissing && !isWeak && <Check className="w-2.5 h-2.5 text-indigo-600" />}
+                                  {s}
+                                  {isMissing && <span className="text-[9px] uppercase font-bold">(Gap)</span>}
+                                  {isWeak && <span className="text-[9px] uppercase font-bold">(Weak)</span>}
+                                </span>
+                              );
+                            })}
+                          </div>
+
+                          {/* Recommendation Reasoning Callout */}
+                          <div className="bg-indigo-50/50 rounded-xl p-3.5 border border-indigo-100 text-xs text-indigo-950 leading-relaxed">
+                            <span className="font-extrabold text-indigo-900 block mb-0.5">
+                              Why this project is recommended:
+                            </span>
+                            {project.recommendation_reason}
+                          </div>
+
+                          {/* Deliverables Checklist (Proof-of-work) */}
+                          {project.deliverables && project.deliverables.length > 0 && (
+                            <div className="bg-slate-50/70 rounded-xl p-3.5 border border-slate-200 space-y-2">
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                                <CheckSquare className="w-3.5 h-3.5 text-primary-600" />
+                                Actionable Deliverables & Portfolio Proof-of-Work:
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-600">
+                                {project.deliverables.map((del, dIdx) => (
+                                  <div key={dIdx} className="flex items-start gap-2">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                                    <span>{del}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Extension Ideas (Optional Deepening) */}
+                          {project.extension_ideas && project.extension_ideas.length > 0 && (
+                            <div className="text-xs text-slate-500 pt-1 flex items-start gap-2">
+                              <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-bold text-slate-700">Deepening Opportunities: </span>
+                                {project.extension_ideas.join(' • ')}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                 )}
               </div>
             </div>
