@@ -31,6 +31,7 @@ export function DashboardPage() {
   const [recommendations, setRecommendations] = useState([]);
   const [activeProgress, setActiveProgress] = useState([]);
   const [analytics, setAnalytics] = useState(null);
+  const [roiData, setRoiData] = useState(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -68,7 +69,15 @@ export function DashboardPage() {
         } catch (err) {
           console.warn('Could not load analytics for career', activeId, err);
         }
+
+        try {
+          const roiRes = await api.getCareerSkillRoi(activeId);
+          setRoiData(roiRes);
+        } catch (err) {
+          console.warn('Could not load skill ROI for career', activeId, err);
+        }
       }
+
 
       // 3. Fetch recommendations
       try {
@@ -177,8 +186,43 @@ export function DashboardPage() {
 
       {error && <Alert type="error" message={error} />}
 
+      {/* Module 11.1 High-ROI Learning Opportunity Banner */}
+      {roiData?.quickest_win && (
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-white rounded-2xl p-5 border border-emerald-200/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 bg-emerald-600 text-white rounded-xl shadow-xs shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  Quickest Win Skill ROI
+                </span>
+                <span className="text-xs font-extrabold text-emerald-700">
+                  ROI: {roiData.quickest_win.roi_score} pts / week
+                </span>
+              </div>
+              <h4 className="text-sm font-black text-slate-900 mt-1">
+                Learn {roiData.quickest_win.skill_name} for a +{roiData.quickest_win.readiness_gain}% readiness boost
+              </h4>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Estimated study effort: ~{roiData.quickest_win.estimated_weeks} weeks ({roiData.quickest_win.estimated_hours}h) to reach Level {roiData.quickest_win.required_level}/5.
+              </p>
+            </div>
+          </div>
+          <Link
+            to={`/skill-gap?career_id=${targetCareerId}&tab=roi`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition shrink-0"
+          >
+            <span>Analyze Skill ROI</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      )}
+
       {/* Main Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
         {/* Readiness Circular Meter */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center">
           <div className="flex items-center justify-between w-full mb-4">

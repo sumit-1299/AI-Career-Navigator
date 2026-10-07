@@ -215,6 +215,30 @@ export const api = {
     });
   },
 
+  getCareerSkillRoi: (careerId, options = {}) => {
+    const { hoursPerWeek = 10, userId = null } = options;
+    const params = new URLSearchParams();
+    if (hoursPerWeek) params.append('hours_per_week', hoursPerWeek);
+    if (userId) params.append('user_id', userId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request(`/careers/${careerId}/skill-roi${query}`);
+  },
+
+  runCounterfactualAnalysis: (careerId, options = {}) => {
+    const { skillId, skillName, targetLevel = null, hoursPerWeek = 10, userId = null } = options;
+    return request(`/careers/${careerId}/counterfactual`, {
+      method: 'POST',
+      body: JSON.stringify({
+        skill_id: skillId,
+        skill_name: skillName,
+        target_level: targetLevel,
+        hours_per_week: hoursPerWeek,
+        user_id: userId,
+      }),
+    });
+  },
+
+
   getCareerAnalytics: (careerId) => request(`/careers/${careerId}/analytics`),
 
   getCareerReadinessSummary: (careerId, options = {}) => {

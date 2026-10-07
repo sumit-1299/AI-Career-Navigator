@@ -27,8 +27,10 @@ from services.skill_gap_service import assess_career_skill_gap
 from services.readiness_summary_service import ReadinessSummaryService
 from services.career_pathway_service import CareerPathwayService
 from services.career_simulator_service import CareerSimulatorService
+from services.skill_roi_service import SkillRoiService
 
 careers_bp = Blueprint("careers", __name__, url_prefix="/api/careers")
+
 
 
 @careers_bp.route("", methods=["GET"])
@@ -120,22 +122,29 @@ def get_career_recommendations():
         student_skills = Skill.query.filter_by(user_id=user_id).all()
 
     domain = request.args.get("domain")
+    include_roi = request.args.get("include_roi", "").lower() in ["1", "true", "yes"]
 
     recommendations = CareerRecommendationService.recommend_careers(
         student_skills=student_skills,
         domain_filter=domain,
         limit=limit,
         user_id=user_id if is_personalized else None,
-        is_personalized=is_personalized
+        is_personalized=is_personalized,
+        include_roi=include_roi
     )
 
-    return jsonify({
+    response_data = {
         "status": "success",
         "user_id": user_id,
         "is_personalized": is_personalized,
         "count": len(recommendations),
         "recommendations": recommendations
-    }), 200
+    }
+    if include_roi:
+        response_data["include_roi"] = True
+
+    return jsonify(response_data), 200
+
 
 
 @careers_bp.route("/<int:career_id>", methods=["GET"])
@@ -255,7 +264,17 @@ def get_career_skill_gap(career_id):
         ],
     }
 
+
+    # Additive Module 11.1 Skill ROI ranking
+    include_roi = request.args.get("include_roi", "true").lower() in ["1", "true", "yes"]
+    if include_roi:
+        roi_res = SkillRoiService.rank_career_skill_rois(career_id, user_id=int(user_id) if user_id else None)
+        response_payload["skill_roi_ranking"] = roi_res.get("ranked_skills", [])
+        response_payload["quickest_win"] = roi_res.get("quickest_win")
+        response_payload["highest_gain"] = roi_res.get("highest_gain")
+
     return jsonify(response_payload), 200
+
 
 
 @careers_bp.route("/<int:career_id>/roadmap", methods=["GET"])
@@ -784,6 +803,125 @@ def simulate_career_skill(career_id):
     return jsonify({
         "status": "success",
         "simulation": result,
+        **result
+    }), 200
+
+
+@careers_bp.route("/<int:career_id>/skill-roi", methods=["GET"])
+@jwt_required(optional=True)
+def get_career_skill_roi(career_id):
+    """
+    Module 11.1: Return deterministic Skill ROI ranking for missing and weak skills.
+    Calculates marginal readiness gain, estimated study weeks, and ROI score.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with id {career_id} not found"
+        }), 404
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else request.args.get("user_id", type=int)
+
+    raw_hours = request.args.get("hours_per_week", 10)
+    try:
+        hours_per_week = int(raw_hours)
+        if hours_per_week <= 0:
+            return jsonify({
+                "status": "error",
+                "message": "hours_per_week must be a positive integer"
+            }), 400
+    except (ValueError, TypeError):
+        return jsonify({
+            "status": "error",
+            "message": "hours_per_week must be a positive integer"
+        }), 400
+
+    roi_data = SkillRoiService.rank_career_skill_rois(
+        career_id=career_id,
+        user_id=user_id,
+        hours_per_week=hours_per_week
+    )
+
+    if "error" in roi_data:
+        return jsonify({
+            "status": "error",
+            "message": roi_data.get("message", "Failed to calculate skill ROI")
+        }), 404
+
+    return jsonify({
+        "status": "success",
+        **roi_data
+    }), 200
+
+
+@careers_bp.route("/<int:career_id>/counterfactual", methods=["POST"])
+@jwt_required(optional=True)
+def run_skill_counterfactual(career_id):
+    """
+    Module 11.1: In-memory counterfactual analysis for improving a specific skill.
+    Calculates before vs after score, gap delta, hours, weeks, ROI, and explainable justification.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with id {career_id} not found"
+        }), 404
+
+    data = request.get_json(silent=True) or {}
+    skill_id = data.get("skill_id")
+    skill_name = data.get("skill_name")
+    target_level = data.get("target_level")
+    raw_hours = data.get("hours_per_week", 10)
+
+    try:
+        hours_per_week = int(raw_hours)
+        if hours_per_week <= 0:
+            return jsonify({
+                "status": "error",
+                "message": "hours_per_week must be a positive integer"
+            }), 400
+    except (ValueError, TypeError):
+        return jsonify({
+            "status": "error",
+            "message": "hours_per_week must be a positive integer"
+        }), 400
+
+    if not skill_id and not skill_name:
+        return jsonify({
+            "status": "error",
+            "message": "Either skill_id or skill_name must be provided"
+        }), 400
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else data.get("user_id")
+    if user_id:
+        try:
+            user_id = int(user_id)
+        except (ValueError, TypeError):
+            user_id = None
+
+    result = SkillRoiService.calculate_counterfactual(
+        career_id=career_id,
+        skill_id=skill_id,
+        skill_name=skill_name,
+        target_level=target_level,
+        user_id=user_id,
+        hours_per_week=hours_per_week
+    )
+
+    if "error" in result:
+        status_code = 404 if result.get("error") in ["CAREER_NOT_FOUND", "SKILL_NOT_FOUND"] else 400
+        return jsonify({
+            "status": "error",
+            "code": result.get("error"),
+            "message": result.get("message", "Counterfactual evaluation failed")
+        }), status_code
+
+    return jsonify({
+        "status": "success",
         **result
     }), 200
 

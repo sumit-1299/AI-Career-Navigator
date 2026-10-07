@@ -45,7 +45,7 @@ export function SkillGapPage() {
   const [selectedPathwayId, setSelectedPathwayId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'gap'); // 'gap' | 'roadmap' | 'pathways' | 'simulator'
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'gap'); // 'gap' | 'roadmap' | 'pathways' | 'simulator' | 'roi'
 
   // Module 8.3: Study intensity (5 | 10 | 20 hours/week)
   const [hoursPerWeek, setHoursPerWeek] = useState(10);
@@ -57,6 +57,11 @@ export function SkillGapPage() {
   const [simulationResult, setSimulationResult] = useState(null);
   const [simulating, setSimulating] = useState(false);
   const [simError, setSimError] = useState(null);
+
+  // Module 11.1: Explainable Skill ROI & Counterfactual State
+  const [roiData, setRoiData] = useState(null);
+  const [counterfactualResult, setCounterfactualResult] = useState(null);
+  const [runningCounterfactual, setRunningCounterfactual] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -73,7 +78,7 @@ export function SkillGapPage() {
         console.warn('Could not load careers', e);
       }
 
-      const [gapRes, roadRes, pathRes] = await Promise.all([
+      const [gapRes, roadRes, pathRes, roiRes] = await Promise.all([
         api.getSkillGap(activeCareerId).catch((e) => {
           console.warn('Skill gap fetch failed', e);
           return null;
@@ -86,11 +91,16 @@ export function SkillGapPage() {
           console.warn('Pathways fetch failed', e);
           return null;
         }),
+        api.getCareerSkillRoi(activeCareerId, { hoursPerWeek }).catch((e) => {
+          console.warn('Skill ROI fetch failed', e);
+          return null;
+        }),
       ]);
 
       setGapData(gapRes);
       setRoadmapData(roadRes);
       setPathwaysData(pathRes);
+      setRoiData(roiRes);
       if (pathRes?.recommended_pathway_id) {
         setSelectedPathwayId(pathRes.recommended_pathway_id);
       } else if (pathRes?.pathways?.[0]?.id) {
@@ -107,18 +117,37 @@ export function SkillGapPage() {
     setHoursPerWeek(hrs);
     setUpdatingTimeline(true);
     try {
-      const [roadRes, pathRes] = await Promise.all([
+      const [roadRes, pathRes, roiRes] = await Promise.all([
         api.getRoadmap(activeCareerId, hrs).catch((e) => null),
         api.getCareerPathways(activeCareerId, { hoursPerWeek: hrs }).catch((e) => null),
+        api.getCareerSkillRoi(activeCareerId, { hoursPerWeek: hrs }).catch((e) => null),
       ]);
       if (roadRes) setRoadmapData(roadRes);
       if (pathRes) setPathwaysData(pathRes);
+      if (roiRes) setRoiData(roiRes);
     } catch (e) {
       console.warn('Failed to update study plan roadmap:', e);
     } finally {
       setUpdatingTimeline(false);
     }
   }
+
+  async function handleRunCounterfactual(skillName, targetLevel = null) {
+    setRunningCounterfactual(true);
+    try {
+      const res = await api.runCounterfactualAnalysis(activeCareerId, {
+        skillName,
+        targetLevel,
+        hoursPerWeek,
+      });
+      setCounterfactualResult(res);
+    } catch (err) {
+      console.warn('Counterfactual failed', err);
+    } finally {
+      setRunningCounterfactual(false);
+    }
+  }
+
 
   function handleCareerChange(newId) {
     const params = { career_id: newId };
@@ -422,7 +451,31 @@ export function SkillGapPage() {
                 </span>
               ) : null}
             </button>
+            <button
+              onClick={() => {
+                setActiveTab('roi');
+                setSearchParams((prev) => {
+                  const p = new URLSearchParams(prev);
+                  p.set('tab', 'roi');
+                  return p;
+                });
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 transition ${
+                activeTab === 'roi'
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+              Explainable Skill ROI
+              {roiData?.quickest_win?.readiness_gain > 0 ? (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">
+                  Top ROI: +{roiData.quickest_win.readiness_gain}%
+                </span>
+              ) : null}
+            </button>
           </div>
+
 
           {/* TAB 1: Skill Categorization Matrix */}
           {activeTab === 'gap' && (
@@ -1838,8 +1891,323 @@ export function SkillGapPage() {
               )}
             </div>
           )}
+
+          {/* TAB 5: Module 11.1 Explainable Skill ROI & Counterfactuals */}
+          {activeTab === 'roi' && (
+            <div className="space-y-6">
+              {/* ROI Header Overview & KPIs */}
+              <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 rounded-2xl p-6 md:p-8 text-white shadow-md relative overflow-hidden">
+                <div className="relative z-10 max-w-3xl space-y-3">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    Explainable AI • Module 11.1 Skill ROI Engine
+                  </div>
+                  <h3 className="text-xl md:text-2xl font-black tracking-tight">
+                    Return on Learning Investment (Skill ROI)
+                  </h3>
+                  <p className="text-xs md:text-sm text-slate-300 leading-relaxed">
+                    Prioritizes your missing and weak skills by <strong>marginal career readiness gain per week of study</strong>.
+                    Discover the quickest path to elevate your profile readiness with deterministic, explainable calculations.
+                  </p>
+                </div>
+
+                {/* Study Intensity Selector */}
+                <div className="mt-6 pt-5 border-t border-slate-700/60 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 text-xs text-slate-300">
+                    <Clock className="w-4 h-4 text-emerald-400" />
+                    <span>Study Intensity:</span>
+                    <div className="inline-flex rounded-lg bg-slate-800 p-1 border border-slate-700">
+                      {[5, 10, 20].map((hrs) => (
+                        <button
+                          key={hrs}
+                          type="button"
+                          disabled={updatingTimeline}
+                          onClick={() => handleIntensityChange(hrs)}
+                          className={`px-3 py-1 rounded-md text-xs font-bold transition ${
+                            hoursPerWeek === hrs
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {hrs}h/wk
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <span className="text-xs text-emerald-300/80">
+                    Total Potential Gain: <strong>+{roiData?.total_potential_gain ?? 0}%</strong> across {roiData?.total_estimated_hours ?? 0} study hours
+                  </span>
+                </div>
+              </div>
+
+              {/* Quickest Win & Highest Gain Highlight Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Quickest Win Card */}
+                <div className="bg-white rounded-2xl p-6 border-2 border-emerald-300 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
+                        <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                        Quickest Win Skill
+                      </div>
+                      {roiData?.quickest_win && (
+                        <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-600 text-white">
+                          ROI: {roiData.quickest_win.roi_score}/wk
+                        </span>
+                      )}
+                    </div>
+
+                    {roiData?.quickest_win ? (
+                      <>
+                        <h4 className="text-lg font-black text-slate-900">
+                          {roiData.quickest_win.skill_name}
+                        </h4>
+                        <div className="grid grid-cols-3 gap-2 py-2 text-center bg-slate-50 rounded-xl border border-slate-100">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Readiness Gain</span>
+                            <span className="text-base font-extrabold text-emerald-600">
+                              +{roiData.quickest_win.readiness_gain}%
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Study Time</span>
+                            <span className="text-base font-extrabold text-slate-800">
+                              {roiData.quickest_win.estimated_weeks} wks
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Required Level</span>
+                            <span className="text-base font-extrabold text-slate-800">
+                              Level {roiData.quickest_win.required_level}/5
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed italic bg-emerald-50/60 p-3 rounded-lg border border-emerald-100">
+                          "{roiData.quickest_win.explanation}"
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-slate-500 py-4">No active skill gaps detected for this career.</p>
+                    )}
+                  </div>
+
+                  {roiData?.quickest_win && (
+                    <button
+                      type="button"
+                      onClick={() => handleRunCounterfactual(roiData.quickest_win.skill_name, roiData.quickest_win.required_level)}
+                      className="mt-4 w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
+                    >
+                      <span>Simulate Quickest Win</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Highest Gain Card */}
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 text-xs font-bold border border-blue-200">
+                        <Award className="w-3.5 h-3.5 text-blue-600" />
+                        Highest Total Readiness Lift
+                      </div>
+                      {roiData?.highest_gain && (
+                        <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-blue-600 text-white">
+                          +{roiData.highest_gain.readiness_gain}% Gain
+                        </span>
+                      )}
+                    </div>
+
+                    {roiData?.highest_gain ? (
+                      <>
+                        <h4 className="text-lg font-black text-slate-900">
+                          {roiData.highest_gain.skill_name}
+                        </h4>
+                        <div className="grid grid-cols-3 gap-2 py-2 text-center bg-slate-50 rounded-xl border border-slate-100">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Lift</span>
+                            <span className="text-base font-extrabold text-blue-600">
+                              +{roiData.highest_gain.readiness_gain}%
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Hours</span>
+                            <span className="text-base font-extrabold text-slate-800">
+                              {roiData.highest_gain.estimated_hours}h
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Importance</span>
+                            <span className="text-base font-extrabold text-slate-800">
+                              {roiData.highest_gain.importance}/5
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed italic bg-blue-50/60 p-3 rounded-lg border border-blue-100">
+                          "{roiData.highest_gain.explanation}"
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-slate-500 py-4">No active skill gaps detected for this career.</p>
+                    )}
+                  </div>
+
+                  {roiData?.highest_gain && (
+                    <button
+                      type="button"
+                      onClick={() => handleRunCounterfactual(roiData.highest_gain.skill_name, roiData.highest_gain.required_level)}
+                      className="mt-4 w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
+                    >
+                      <span>Simulate Highest Gain</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Counterfactual Evaluation Result Banner (if active) */}
+              {counterfactualResult && (
+                <div className="bg-emerald-50 rounded-2xl p-6 border-2 border-emerald-400 shadow-sm animate-fadeIn space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-emerald-600" />
+                      <h4 className="text-sm font-black text-emerald-950 uppercase tracking-wider">
+                        Counterfactual Result: {counterfactualResult.skill_name}
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCounterfactualResult(null)}
+                      className="text-xs text-emerald-700 hover:text-emerald-900 font-bold px-2 py-1 rounded-md hover:bg-emerald-100"
+                    >
+                      ✕ Close
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white p-4 rounded-xl border border-emerald-200">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Readiness Transition</span>
+                      <span className="text-sm font-extrabold text-slate-900">
+                        {counterfactualResult.before_readiness}% ➔ <strong className="text-emerald-600">{counterfactualResult.after_readiness}%</strong>
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Marginal Gain</span>
+                      <span className="text-sm font-extrabold text-emerald-600">
+                        +{counterfactualResult.readiness_gain}%
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Effort Required</span>
+                      <span className="text-sm font-extrabold text-slate-800">
+                        {counterfactualResult.estimated_hours}h ({counterfactualResult.estimated_weeks} wks)
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">Calculated Skill ROI</span>
+                      <span className="text-sm font-extrabold text-emerald-700">
+                        {counterfactualResult.roi_score} pts/week
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-emerald-900 font-medium leading-relaxed bg-white/70 p-3 rounded-lg border border-emerald-200/60">
+                    {counterfactualResult.explanation}
+                  </p>
+                </div>
+              )}
+
+              {/* Complete Deterministic ROI Ranking Table */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-base font-black text-slate-900">
+                      Deterministic Skill ROI Ranking Matrix
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Ranked strictly by readiness gain per study week, career importance, and remaining deficit
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-slate-400">
+                    {roiData?.ranked_skills?.length || 0} Actionable Skills
+                  </span>
+                </div>
+
+                {(!roiData?.ranked_skills || roiData.ranked_skills.length === 0) ? (
+                  <p className="text-xs text-slate-500 py-6 text-center italic">
+                    All competencies for this career are currently satisfied in your profile.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {roiData.ranked_skills.map((skill, index) => (
+                      <div
+                        key={skill.skill_name}
+                        className="p-4 rounded-xl border border-slate-200 hover:border-emerald-300 hover:shadow-xs transition bg-slate-50/40 space-y-3"
+                      >
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <span className="w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
+                              #{index + 1}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h5 className="font-black text-sm text-slate-900">{skill.skill_name}</h5>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  skill.status === 'MISSING'
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                  {skill.status}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                Current: Level {skill.current_proficiency}/5 • Target: Level {skill.required_level}/5 • Importance: {skill.importance}/5
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4 shrink-0">
+                            <div className="text-right">
+                              <span className="text-xs font-extrabold text-emerald-600 block">
+                                +{skill.readiness_gain}% Gain
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {skill.estimated_hours}h (~{skill.estimated_weeks} wks)
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-xs font-black px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 block">
+                                ROI: {skill.roi_score}
+                              </span>
+                              <span className="text-[9px] text-slate-400">pts / week</span>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={runningCounterfactual}
+                              onClick={() => handleRunCounterfactual(skill.skill_name, skill.required_level)}
+                              className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-bold transition shadow-2xs"
+                            >
+                              Counterfactual →
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Explainable Reasoning */}
+                        <div className="pt-2.5 border-t border-slate-200/60 text-xs text-slate-600 leading-relaxed">
+                          <span className="font-semibold text-slate-700">Reasoning: </span>
+                          {skill.explanation}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
+
     </div>
   );
 }

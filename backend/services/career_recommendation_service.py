@@ -26,6 +26,7 @@ from models.skill import Skill
 from services.career_market_service import CareerMarketService
 from services.skill_gap_service import SkillGapService, SkillGapStatus
 from services.resume_extraction_service import ResumeExtractionService
+from services.skill_roi_service import SkillRoiService
 
 
 class CareerRecommendationService:
@@ -413,13 +414,15 @@ class CareerRecommendationService:
         limit: Optional[int] = None,
         user_id: Optional[int] = None,
         is_personalized: bool = False,
-        resume_text: Optional[str] = None
+        resume_text: Optional[str] = None,
+        include_roi: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Evaluates and ranks all available careers for a student.
         - When is_personalized=True: Computes multi-factor score (Skill Fit 50%, Preference Fit 20%,
           Market Demand 15%, Academic Fit 15%), along with factor breakdown and explainability justification.
         - When is_personalized=False: Falls back to baseline skill-only recommendation score.
+        - When include_roi=True: Additively calculates and attaches top skill ROIs and quickest wins.
         """
         if student_skills is None:
             student_skills = []
@@ -588,6 +591,17 @@ class CareerRecommendationService:
             )
         )
 
-        if limit and limit > 0:
-            return ranked_results[:limit]
-        return ranked_results
+        final_slice = ranked_results[:limit] if (limit and limit > 0) else ranked_results
+
+        if include_roi:
+            for item in final_slice:
+                roi_analysis = SkillRoiService.rank_career_skill_rois(
+                    item["career_id"],
+                    user_id=user_id if is_personalized else None
+                )
+                item["quickest_win"] = roi_analysis.get("quickest_win")
+                item["highest_gain"] = roi_analysis.get("highest_gain")
+                item["top_skill_rois"] = roi_analysis.get("ranked_skills", [])[:3]
+                item["total_potential_gain"] = roi_analysis.get("total_potential_gain", 0.0)
+
+        return final_slice
