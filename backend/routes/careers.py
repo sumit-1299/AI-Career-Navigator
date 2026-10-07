@@ -1227,3 +1227,42 @@ def get_recommendation_benchmark():
     }), 200
 
 
+@careers_bp.route("/<int:career_id>/practical-tasks", methods=["GET"])
+@jwt_required(optional=True)
+def get_career_practical_tasks(career_id):
+    """
+    Phase 12 Module 12.3: Practical Skill Assessment & Hands-On Task Engine.
+    Lists practical tasks specifically prioritized for this career track.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with id {career_id} not found"
+        }), 404
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else request.args.get("user_id", type=int)
+
+    difficulty = request.args.get("difficulty", type=str)
+    skill = request.args.get("skill", type=str)
+    category = request.args.get("category", type=str)
+    job_source = request.args.get("job_source", type=str)
+    job_id = request.args.get("job_id", type=str)
+    limit = request.args.get("limit", default=20, type=int)
+
+    from services.practical_task_service import PracticalTaskService
+    result = PracticalTaskService.list_tasks(
+        career_id=career_id,
+        difficulty=difficulty,
+        skill=skill,
+        category=category,
+        job_source=job_source,
+        job_id=job_id,
+        user_id=user_id,
+        limit=limit
+    )
+
+    return jsonify(result), 200
+
+

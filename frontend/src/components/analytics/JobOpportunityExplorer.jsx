@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { Spinner, Alert } from '../common/UIFeedback';
@@ -6,6 +7,7 @@ import {
   Briefcase,
   Search,
   Building2,
+  CheckSquare,
   MapPin,
   ExternalLink,
   CheckCircle2,
@@ -652,10 +654,17 @@ export function JobOpportunityExplorer() {
                             <p className="text-[11px] text-slate-600">{act.why_it_matters}</p>
                           </div>
 
-                          <div className="text-right shrink-0">
+                          <div className="text-right shrink-0 flex flex-col sm:items-end gap-1">
                             <span className="text-[11px] text-slate-500 block">
                               ~{act.estimated_study_hours} hrs study
                             </span>
+                            <Link
+                              to={`/practical-tasks?skill=${encodeURIComponent(act.skill_name)}${actionCenterData.career_connection?.career_id ? `&career_id=${actionCenterData.career_connection.career_id}` : ''}`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary-50 hover:bg-primary-100 text-primary-700 text-[11px] font-bold rounded-lg border border-primary-200 transition"
+                            >
+                              <CheckSquare className="w-3 h-3 text-primary-600" />
+                              <span>Practice this skill</span>
+                            </Link>
                           </div>
                         </div>
                       ))}

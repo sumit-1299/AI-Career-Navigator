@@ -12,6 +12,7 @@ from routes.careers import careers_bp
 from routes.learning_resources import learning_resources_bp
 from routes.career_market import career_market_bp
 from routes.jobs import jobs_bp
+from routes.practical_tasks import practical_tasks_bp
 from services.learning_resource_service import LearningResourceService
 
 
@@ -30,6 +31,7 @@ def create_app(config_class=Config):
     app.register_blueprint(learning_resources_bp)
     app.register_blueprint(career_market_bp)
     app.register_blueprint(jobs_bp)
+    app.register_blueprint(practical_tasks_bp)
 
     @app.after_request
     def add_cors_headers(response):

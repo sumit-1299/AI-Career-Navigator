@@ -394,4 +394,39 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ answers }),
     }),
+
+  // Practical Skill Assessment & Hands-On Task Engine
+  listPracticalTasks: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.career_id || params.careerId) q.append('career_id', params.career_id || params.careerId);
+    if (params.difficulty) q.append('difficulty', params.difficulty);
+    if (params.skill) q.append('skill', params.skill);
+    if (params.category) q.append('category', params.category);
+    if (params.job_source || params.jobSource) q.append('job_source', params.job_source || params.jobSource);
+    if (params.job_id || params.jobId) q.append('job_id', params.job_id || params.jobId);
+    if (params.limit) q.append('limit', params.limit);
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+    return request(`/practical-tasks${queryString}`);
+  },
+
+  getPracticalTask: (taskId) =>
+    request(`/practical-tasks/${encodeURIComponent(taskId)}`),
+
+  evaluatePracticalTask: (payload) =>
+    request('/practical-tasks/evaluate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getCareerPracticalTasks: (careerId, params = {}) => {
+    const q = new URLSearchParams();
+    if (params.difficulty) q.append('difficulty', params.difficulty);
+    if (params.skill) q.append('skill', params.skill);
+    if (params.category) q.append('category', params.category);
+    if (params.job_source || params.jobSource) q.append('job_source', params.job_source || params.jobSource);
+    if (params.job_id || params.jobId) q.append('job_id', params.job_id || params.jobId);
+    if (params.limit) q.append('limit', params.limit);
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+    return request(`/careers/${careerId}/practical-tasks${queryString}`);
+  },
 };
