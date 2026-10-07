@@ -67,7 +67,10 @@ def create_app(config_class=Config):
 
     with app.app_context():
         import models
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception:
+            pass
         try:
             LearningResourceService.seed_curated_sample_resources()
         except Exception:

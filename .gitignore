@@ -15,6 +15,7 @@ venv/
 
 # PostgreSQL / local files
 *.sql
+!database/init.sql
 
 # Logs
 *.log
