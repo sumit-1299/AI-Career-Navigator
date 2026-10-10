@@ -3,6 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { RadialGauge } from '../components/common/RadialGauge';
+import { SectionHeader } from '../components/common/SectionHeader';
 import { Badge } from '../components/common/Badge';
 import { Spinner, Alert } from '../components/common/UIFeedback';
 import { MultiHopTrajectoryExplorer } from '../components/analytics/MultiHopTrajectoryExplorer';
@@ -282,40 +283,28 @@ export function SkillGapPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header & Target Career Switcher */}
-      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-primary-50 text-primary-700 border border-primary-200">
-              Readiness & Pathway Analysis
-            </span>
+      {/* Modern Section Header */}
+      <SectionHeader
+        badge="Readiness & Pathway Analysis"
+        title="Skill-Gap Analysis & Roadmap"
+        subtitle={`Analyzing readiness for ${gapData?.career_name || gapData?.career || selectedCareer?.career_name || selectedCareer?.title || 'Selected Career'}`}
+        action={
+          <div className="flex items-center gap-2.5">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Target Role:</label>
+            <select
+              value={activeCareerId}
+              onChange={(e) => handleCareerChange(e.target.value)}
+              className="bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-3.5 py-2 font-bold transition cursor-pointer focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+            >
+              {careers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.career_name || c.title}
+                </option>
+              ))}
+            </select>
           </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Skill-Gap Analysis & Roadmap
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Analyzing readiness for{' '}
-            <span className="font-semibold text-slate-800">
-              {gapData?.career_name || gapData?.career || selectedCareer?.career_name || selectedCareer?.title || 'Selected Career'}
-            </span>
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-medium text-slate-500">Target Role:</label>
-          <select
-            value={activeCareerId}
-            onChange={(e) => handleCareerChange(e.target.value)}
-            className="bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl px-3.5 py-2.5 font-medium transition cursor-pointer focus:ring-primary-500 focus:border-primary-500"
-          >
-            {careers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.career_name || c.title}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+        }
+      />
 
       {error && <Alert type="error" message={error} />}
 

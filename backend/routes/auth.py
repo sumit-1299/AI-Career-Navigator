@@ -7,6 +7,7 @@ from models.user import User
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api")
 @auth_bp.route("/register", methods=["POST"])
+@auth_bp.route("/auth/register", methods=["POST"])
 def register():
 
     data = request.get_json()
@@ -51,6 +52,7 @@ def register():
     }, 201
 
 @auth_bp.route("/login", methods=["POST"])
+@auth_bp.route("/auth/login", methods=["POST"])
 def login():
 
     data = request.get_json()

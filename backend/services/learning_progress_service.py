@@ -141,6 +141,8 @@ class LearningProgressService:
             learning_resource_id=learning_resource_id
         ).first()
 
+        already_completed = (progress is not None and progress.status == "Completed")
+
         if not progress:
             progress = UserLearningProgress(
                 user_id=user_id,
@@ -152,7 +154,8 @@ class LearningProgressService:
 
         progress.status = "Completed"
         progress.progress_percentage = 100.0
-        progress.completed_at = datetime.utcnow()
+        if not progress.completed_at:
+            progress.completed_at = datetime.utcnow()
         progress.last_updated = datetime.utcnow()
 
         # Update student's Skill proficiency in database
@@ -175,36 +178,47 @@ class LearningProgressService:
                         student_skill = s
                         break
 
-            prev_prof = student_skill.proficiency if student_skill else 0
-            new_prof = cls._calculate_skill_proficiency_boost(
-                resource.difficulty_level,
-                prev_prof
-            )
-
-            if student_skill:
-                student_skill.proficiency = new_prof
-                if not student_skill.canonical_skill_id:
-                    student_skill.canonical_skill_id = canonical_skill.id
+            if already_completed:
                 skill_update_info = {
-                    "action": "updated",
-                    "skill_name": student_skill.skill_name,
-                    "previous_proficiency": prev_prof,
-                    "new_proficiency": new_prof
+                    "action": "already_boosted",
+                    "skill_name": student_skill.skill_name if student_skill else canonical_skill.canonical_name,
+                    "previous_proficiency": student_skill.proficiency if student_skill else 0,
+                    "new_proficiency": student_skill.proficiency if student_skill else 0,
+                    "duplicate_boost_prevented": True
                 }
             else:
-                new_skill = Skill(
-                    user_id=user_id,
-                    skill_name=canonical_skill.canonical_name,
-                    proficiency=new_prof,
-                    canonical_skill_id=canonical_skill.id
+                prev_prof = student_skill.proficiency if student_skill else 0
+                new_prof = cls._calculate_skill_proficiency_boost(
+                    resource.difficulty_level,
+                    prev_prof
                 )
-                db.session.add(new_skill)
-                skill_update_info = {
-                    "action": "created",
-                    "skill_name": canonical_skill.canonical_name,
-                    "previous_proficiency": 0,
-                    "new_proficiency": new_prof
-                }
+
+                if student_skill:
+                    student_skill.proficiency = new_prof
+                    if not student_skill.canonical_skill_id:
+                        student_skill.canonical_skill_id = canonical_skill.id
+                    skill_update_info = {
+                        "action": "updated",
+                        "skill_name": student_skill.skill_name,
+                        "previous_proficiency": prev_prof,
+                        "new_proficiency": new_prof,
+                        "duplicate_boost_prevented": False
+                    }
+                else:
+                    new_skill = Skill(
+                        user_id=user_id,
+                        skill_name=canonical_skill.canonical_name,
+                        proficiency=new_prof,
+                        canonical_skill_id=canonical_skill.id
+                    )
+                    db.session.add(new_skill)
+                    skill_update_info = {
+                        "action": "created",
+                        "skill_name": canonical_skill.canonical_name,
+                        "previous_proficiency": 0,
+                        "new_proficiency": new_prof,
+                        "duplicate_boost_prevented": False
+                    }
 
         db.session.commit()
 

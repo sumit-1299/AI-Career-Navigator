@@ -7,9 +7,14 @@ Section Segmentation -> Skill Detection -> Normalization -> Canonical Skill Mapp
 Confidence Scoring & Review Flagging -> Student Skill Profile.
 """
 
+import glob
 import io
 import os
 import re
+import shutil
+import subprocess
+import tempfile
+import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 import zlib
@@ -132,16 +137,95 @@ class ResumeExtractionService:
             raise ValueError("Corrupted DOCX file: Failed to parse XML structure")
 
     @classmethod
+    def is_ocr_available(cls) -> bool:
+        """Checks if pdftoppm and tesseract binaries are available in system PATH."""
+        return shutil.which("pdftoppm") is not None and shutil.which("tesseract") is not None
+
+    @classmethod
+    def _extract_text_via_ocr(cls, file_bytes: bytes, max_pages: int = 10) -> str:
+        """
+        Renders PDF pages to images using pdftoppm and extracts text via Tesseract OCR.
+        Processes up to max_pages pages, sorted numerically to preserve reading order.
+        """
+        if not cls.is_ocr_available():
+            return ""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_pdf = os.path.join(tmpdir, "document.pdf")
+            try:
+                with open(input_pdf, "wb") as f:
+                    f.write(file_bytes)
+            except Exception:
+                return ""
+
+            prefix = os.path.join(tmpdir, "page")
+            cmd_ppm = [
+                "pdftoppm",
+                "-png",
+                "-r", "200",
+                "-f", "1",
+                "-l", str(max_pages),
+                input_pdf,
+                prefix
+            ]
+            try:
+                subprocess.run(cmd_ppm, capture_output=True, timeout=30, check=True)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, Exception):
+                return ""
+
+            page_files = glob.glob(os.path.join(tmpdir, "page-*.png"))
+            def get_page_num(p: str) -> int:
+                m = re.search(r"page-(\d+)\.png", os.path.basename(p))
+                return int(m.group(1)) if m else 0
+
+            page_files.sort(key=get_page_num)
+            if not page_files:
+                return ""
+
+            extracted_pages = []
+            for img_path in page_files:
+                cmd_tess = [
+                    "tesseract",
+                    img_path,
+                    "stdout",
+                    "-l", "eng",
+                    "--psm", "3"
+                ]
+                try:
+                    res = subprocess.run(
+                        cmd_tess,
+                        capture_output=True,
+                        text=True,
+                        timeout=25,
+                        check=True
+                    )
+                    if res.stdout:
+                        extracted_pages.append(res.stdout)
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired, Exception):
+                    continue
+
+            raw_text = "\n".join(extracted_pages).strip()
+            if not raw_text:
+                return ""
+
+            normalized_text = unicodedata.normalize("NFKC", raw_text)
+            return normalized_text.strip()
+
+    @classmethod
     def extract_text_from_pdf(cls, file_bytes: bytes) -> str:
         """
         Extracts clean text from a PDF document.
-        Employs standard library zlib deflating and PDF stream decoding.
-        Supports standard Tj and TJ text operators, unescaping, and font streams.
+        Employs standard library and Poppler/Tesseract OCR fallback:
+        1. Fast text extraction using pypdf, pdftotext, or native zlib FlateDecode.
+        2. Text sufficiency evaluation (>= 20 words).
+        3. Intelligent OCR fallback for scanned or image-based PDFs if text is insufficient.
         """
         if b"%PDF-" not in file_bytes[:1024]:
             raise ValueError("Corrupted or invalid PDF file: Missing %PDF- header")
 
-        # Try optional pypdf library if available in environment
+        extracted_text = ""
+
+        # 1. Try pypdf library if available in environment
         try:
             import pypdf
             reader = pypdf.PdfReader(io.BytesIO(file_bytes))
@@ -151,55 +235,99 @@ class ResumeExtractionService:
                 if pt:
                     pages_text.append(pt)
             if pages_text:
-                return "\n".join(pages_text).strip()
+                extracted_text = "\n".join(pages_text).strip()
         except ImportError:
             pass
         except Exception:
-            pass  # Fallback to native stream parsing below
+            pass
 
-        # Native stream parser: decode FlateDecode streams
-        extracted_fragments = []
-        stream_matches = re.finditer(b"stream[\r\n]+(.*?)[\r\n]+endstream", file_bytes, re.DOTALL)
-
-        for match in stream_matches:
-            stream_data = match.group(1)
-            decompressed = None
-
-            # Try zlib decompression (FlateDecode)
+        # 2. Try pdftotext utility if available and no text extracted yet
+        if not extracted_text and shutil.which("pdftotext"):
             try:
-                decompressed = zlib.decompress(stream_data)
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                    f.write(file_bytes)
+                    tmp_name = f.name
+                try:
+                    res = subprocess.run(
+                        ["pdftotext", "-layout", tmp_name, "-"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        check=False
+                    )
+                    if res.returncode == 0 and res.stdout.strip():
+                        extracted_text = res.stdout.strip()
+                finally:
+                    if os.path.exists(tmp_name):
+                        os.remove(tmp_name)
             except Exception:
-                # Might be uncompressed ASCII or raw stream
-                decompressed = stream_data
+                pass
 
-            if not decompressed:
-                continue
-
-            try:
-                stream_text = decompressed.decode("latin1", errors="ignore")
-            except Exception:
-                continue
-
-            # Look for Tj operators: (string) Tj or (string) '
-            tj_matches = re.findall(r"\((.*?)\)\s*(?:Tj|')", stream_text, re.DOTALL)
-            for raw_s in tj_matches:
-                clean_s = cls._unescape_pdf_string(raw_s)
-                if clean_s.strip():
-                    extracted_fragments.append(clean_s.strip())
-
-            # Look for TJ array operators: [(s1) -100 (s2)] TJ
-            tj_array_matches = re.findall(r"\[(.*?)\]\s*TJ", stream_text, re.DOTALL)
-            for arr in tj_array_matches:
-                parts = re.findall(r"\((.*?)\)", arr, re.DOTALL)
-                combined = "".join(cls._unescape_pdf_string(p) for p in parts)
-                if combined.strip():
-                    extracted_fragments.append(combined.strip())
-
-        extracted_text = "\n".join(extracted_fragments).strip()
+        # 3. Native stream parser fallback: decode FlateDecode streams
         if not extracted_text:
-            raise ValueError("PDF contains no extractable text (it may be empty, encrypted, or a scanned image)")
+            extracted_fragments = []
+            stream_matches = re.finditer(b"stream[\r\n]+(.*?)[\r\n]+endstream", file_bytes, re.DOTALL)
 
-        return extracted_text
+            for match in stream_matches:
+                stream_data = match.group(1)
+                decompressed = None
+
+                # Try zlib decompression (FlateDecode)
+                try:
+                    decompressed = zlib.decompress(stream_data)
+                except Exception:
+                    decompressed = stream_data
+
+                if not decompressed:
+                    continue
+
+                try:
+                    stream_text = decompressed.decode("latin1", errors="ignore")
+                except Exception:
+                    continue
+
+                # Look for Tj operators: (string) Tj or (string) '
+                tj_matches = re.findall(r"\((.*?)\)\s*(?:Tj|')", stream_text, re.DOTALL)
+                for raw_s in tj_matches:
+                    clean_s = cls._unescape_pdf_string(raw_s)
+                    if clean_s.strip():
+                        extracted_fragments.append(clean_s.strip())
+
+                # Look for TJ array operators: [(s1) -100 (s2)] TJ
+                tj_array_matches = re.findall(r"\[(.*?)\]\s*TJ", stream_text, re.DOTALL)
+                for arr in tj_array_matches:
+                    parts = re.findall(r"\((.*?)\)", arr, re.DOTALL)
+                    combined = "".join(cls._unescape_pdf_string(p) for p in parts)
+                    if combined.strip():
+                        extracted_fragments.append(combined.strip())
+
+            if extracted_fragments:
+                extracted_text = "\n".join(extracted_fragments).strip()
+
+        # Evaluate text sufficiency heuristic
+        normal_words = len(re.findall(r"[A-Za-z0-9#\+\.\-/]{2,}", extracted_text))
+        if normal_words >= 20:
+            return extracted_text.strip()
+
+        # If text is insufficient or empty, attempt OCR fallback
+        ocr_text = ""
+        if cls.is_ocr_available():
+            try:
+                ocr_text = cls._extract_text_via_ocr(file_bytes)
+            except Exception:
+                ocr_text = ""
+
+        ocr_words = len(re.findall(r"[A-Za-z0-9#\+\.\-/]{2,}", ocr_text))
+        if ocr_words > normal_words:
+            return ocr_text.strip()
+
+        if extracted_text.strip():
+            return extracted_text.strip()
+
+        raise ValueError(
+            "We couldn't extract readable text from this resume. "
+            "Please upload a searchable PDF or TXT/DOCX file, or enable the required OCR support."
+        )
 
     @staticmethod
     def _unescape_pdf_string(s: str) -> str:
@@ -260,6 +388,32 @@ class ResumeExtractionService:
             if norm_alias and a.canonical_skill:
                 alias_map[norm_alias] = (a.canonical_skill, a.alias_name)
 
+        # Standard alias expansions for common acronyms and variant terms
+        EXPANDED_ALIASES = {
+            "amazon web services": "AWS",
+            "aws cloud": "AWS",
+            "continuous integration / continuous delivery": "CI/CD",
+            "continuous integration": "CI/CD",
+            "continuous delivery": "CI/CD",
+            "ci cd": "CI/CD",
+            "ci/cd pipelines": "CI/CD",
+            "k8s": "Kubernetes",
+            "kube": "Kubernetes",
+            "postgres": "PostgreSQL",
+            "postgresql database": "PostgreSQL",
+            "mysql database": "MySQL",
+            "js": "JavaScript",
+            "reactjs": "React",
+            "react.js": "React",
+            "docker containerization": "Docker",
+        }
+        name_to_cs = {cs.canonical_name.lower(): cs for cs in canonical_skills}
+        for alias_term, target_canonical in EXPANDED_ALIASES.items():
+            norm_exp = normalize_skill_name(alias_term)
+            cs_obj = name_to_cs.get(target_canonical.lower())
+            if cs_obj and norm_exp not in canonical_map and norm_exp not in alias_map:
+                alias_map[norm_exp] = (cs_obj, alias_term)
+
         return canonical_map, alias_map
 
     @classmethod
@@ -271,6 +425,7 @@ class ResumeExtractionService:
         """
         Analyzes resume text, detects candidate skills, normalizes and maps to CanonicalSkills.
         Separates high-confidence matches (AUTO_MATCH) from ambiguous items requiring human review (REVIEW).
+        Returns dual contract supporting both existing backend regression tests and frontend UI.
         """
         if not resume_text or not resume_text.strip():
             return {
@@ -282,7 +437,17 @@ class ResumeExtractionService:
                 "review_required_count": 0,
                 "auto_matched_skills": [],
                 "review_required_skills": [],
-                "detected_skills": []
+                "detected_skills": [],
+                "matched_canonical_skills": [],
+                "ambiguous_skills": [],
+                "unmatched_skills": [],
+                "extracted_skills": [],
+                "summary": {
+                    "total_extracted": 0,
+                    "exact_matches": 0,
+                    "ambiguous_matches": 0,
+                    "unmatched": 0,
+                },
             }
 
         sections = cls.segment_sections(resume_text)
@@ -378,6 +543,43 @@ class ResumeExtractionService:
         auto_matched = [s for s in sorted_skills if s["decision"] == "AUTO_MATCH"]
         review_required = [s for s in sorted_skills if s["decision"] == "REVIEW"]
 
+        # Dual contract for frontend UI
+        matched_canonical = []
+        for s in auto_matched:
+            matched_canonical.append({
+                "canonical_id": s["canonical_skill_id"],
+                "canonical_name": s["canonical_name"],
+                "confidence": s["confidence_score"],
+                "source_skill": s["matched_term"],
+                "match_type": "exact" if s.get("confidence_score", 0) >= 0.95 else "partial",
+                "suggested_proficiency": s.get("suggested_proficiency", 6),
+                "frequency": s.get("frequency", 1),
+                "detected_sections": s.get("detected_sections", [])
+            })
+
+        ambiguous = []
+        for s in review_required:
+            ambiguous.append({
+                "source_skill": s["matched_term"],
+                "canonical_id": s["canonical_skill_id"],
+                "canonical_name": s["canonical_name"],
+                "confidence": s["confidence_score"],
+                "candidates": [
+                    {
+                        "canonical_id": s["canonical_skill_id"],
+                        "canonical_name": s["canonical_name"],
+                        "confidence": s["confidence_score"]
+                    }
+                ]
+            })
+
+        summary = {
+            "total_extracted": len(sorted_skills),
+            "exact_matches": len(matched_canonical),
+            "ambiguous_matches": len(ambiguous),
+            "unmatched": 0
+        }
+
         return {
             "status": "success",
             "extracted_text_length": len(resume_text),
@@ -387,7 +589,12 @@ class ResumeExtractionService:
             "review_required_count": len(review_required),
             "auto_matched_skills": auto_matched,
             "review_required_skills": review_required,
-            "detected_skills": sorted_skills
+            "detected_skills": sorted_skills,
+            "matched_canonical_skills": matched_canonical,
+            "ambiguous_skills": ambiguous,
+            "unmatched_skills": [],
+            "extracted_skills": sorted_skills,
+            "summary": summary
         }
 
     @classmethod
@@ -405,7 +612,7 @@ class ResumeExtractionService:
         updated = 0
 
         for item in skills_data:
-            canonical_id = item.get("canonical_skill_id")
+            canonical_id = item.get("canonical_skill_id") or item.get("canonical_id")
             skill_name = item.get("canonical_name") or item.get("skill_name")
             prof = item.get("suggested_proficiency") or item.get("proficiency", 6)
 

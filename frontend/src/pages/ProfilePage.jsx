@@ -2,10 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Spinner, Alert } from '../components/common/UIFeedback';
+import { Badge } from '../components/common/Badge';
+import { Card } from '../components/common/Card';
+import { SectionHeader } from '../components/common/SectionHeader';
 import {
   GraduationCap,
   Briefcase,
   Save,
+  User,
+  Sparkles,
+  Target,
+  CheckCircle2,
 } from 'lucide-react';
 
 export function ProfilePage() {
@@ -108,38 +115,27 @@ export function ProfilePage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-200">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                User Credentials & Objectives
-              </span>
-            </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Student Profile & Career Preferences
-            </h1>
-            <p className="text-slate-500 text-sm mt-1">
-              Configure your academic background and desired career trajectory.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Modernized Header */}
+      <SectionHeader
+        badge="User Credentials & Objectives"
+        title="Student Profile & Career Preferences"
+        subtitle="Configure your academic credentials, specialization, and desired career trajectory."
+        action={
+          <div className="flex items-center gap-3 bg-white p-2 pr-4 rounded-2xl border border-slate-200/90 shadow-subtle">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-primary-600 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
               {user?.name ? user.name[0].toUpperCase() : 'U'}
             </div>
             <div>
-              <p className="font-bold text-sm text-slate-800">{user?.name || 'Student'}</p>
+              <p className="font-bold text-sm text-slate-800 leading-tight">{user?.name || 'Student'}</p>
               <p className="text-xs text-slate-400">{user?.email}</p>
             </div>
           </div>
-        </div>
-      </div>
+        }
+      />
 
-      {error && <Alert type="error" message={error} />}
-      {successMsg && <Alert type="success" message={successMsg} />}
+      {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
+      {successMsg && <Alert type="success" message={successMsg} onClose={() => setSuccessMsg(null)} />}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20">
@@ -149,23 +145,28 @@ export function ProfilePage() {
       ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Section 1: Academic Background */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-              <GraduationCap className="w-5 h-5 text-primary-600" />
-              <h2 className="text-base font-bold text-slate-900">Academic Background</h2>
+          <Card className="p-6 md:p-8 shadow-card">
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+              <div className="p-2.5 rounded-xl bg-primary-50 text-primary-600">
+                <GraduationCap className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Academic Background</h2>
+                <p className="text-xs text-slate-500">Your degree level, institution focus, and specialization</p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                   Degree / Education Level
                 </label>
                 <select
                   value={educationLevel}
                   onChange={(e) => setEducationLevel(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-sm"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 text-sm font-medium transition"
                 >
-                  <option value="">Select Level</option>
+                  <option value="">Select Education Level</option>
                   <option value="High School">High School</option>
                   <option value="Associate">Associate Degree</option>
                   <option value="Bachelor's">Bachelor's Degree</option>
@@ -176,20 +177,20 @@ export function ProfilePage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                   Academic Major / Specialization
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Computer Science, Information Systems"
+                  placeholder="e.g. Computer Science, Information Systems, Software Eng"
                   value={major}
                   onChange={(e) => setMajor(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-sm"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 text-sm transition"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                   Expected Graduation Year
                 </label>
                 <input
@@ -199,12 +200,12 @@ export function ProfilePage() {
                   max="2035"
                   value={graduationYear}
                   onChange={(e) => setGraduationYear(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-sm"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 text-sm transition"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                   Academic Interests (Comma-separated)
                 </label>
                 <input
@@ -212,22 +213,27 @@ export function ProfilePage() {
                   placeholder="e.g. Artificial Intelligence, Distributed Systems, Cloud"
                   value={interests}
                   onChange={(e) => setInterests(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-sm"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 text-sm transition"
                 />
               </div>
             </div>
-          </div>
+          </Card>
 
           {/* Section 2: Career Preferences */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-              <Briefcase className="w-5 h-5 text-indigo-600" />
-              <h2 className="text-base font-bold text-slate-900">Career Preferences & Objectives</h2>
+          <Card className="p-6 md:p-8 shadow-card">
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+              <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600">
+                <Briefcase className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Career Preferences & Objectives</h2>
+                <p className="text-xs text-slate-500">Tailors multi-hop recommendations and job matching to your target path</p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                   Target Role Title
                 </label>
                 <input
@@ -235,18 +241,18 @@ export function ProfilePage() {
                   placeholder="e.g. Machine Learning Engineer"
                   value={targetRole}
                   onChange={(e) => setTargetRole(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-sm"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 text-sm transition"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                   Preferred Industry Domain
                 </label>
                 <select
                   value={preferredDomain}
                   onChange={(e) => setPreferredDomain(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-sm"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 text-sm font-medium transition"
                 >
                   <option value="">Any Domain</option>
                   <option value="Data Science & AI">Data Science & AI</option>
@@ -258,13 +264,13 @@ export function ProfilePage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
                   Current Experience Level
                 </label>
                 <select
                   value={experienceLevel}
                   onChange={(e) => setExperienceLevel(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-sm"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 text-sm font-medium transition"
                 >
                   <option value="Student">Student / Intern</option>
                   <option value="Entry-Level">Entry-Level (0–2 yrs)</option>
@@ -273,14 +279,14 @@ export function ProfilePage() {
                 </select>
               </div>
             </div>
-          </div>
+          </Card>
 
           {/* Submit Action */}
           <div className="flex justify-end">
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-600/20 transition flex items-center gap-2"
+              className="px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-subtle hover:shadow transition flex items-center gap-2"
             >
               {saving ? (
                 <>
@@ -300,3 +306,5 @@ export function ProfilePage() {
     </div>
   );
 }
+
+export default ProfilePage;

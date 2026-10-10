@@ -94,6 +94,7 @@ class UserLearningProgress(db.Model):
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "resource_id": self.learning_resource_id,
             "learning_resource_id": self.learning_resource_id,
             "canonical_skill_id": self.canonical_skill_id,
             "status": self.status,
@@ -103,6 +104,7 @@ class UserLearningProgress(db.Model):
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "last_updated": self.last_updated.isoformat() if self.last_updated else None,
             "resource": {
+                "id": self.learning_resource.id,
                 "title": self.learning_resource.title,
                 "resource_type": self.learning_resource.resource_type,
                 "provider": self.learning_resource.provider,

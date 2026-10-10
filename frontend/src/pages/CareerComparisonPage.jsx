@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { Spinner, Alert } from '../components/common/UIFeedback';
 import { Badge } from '../components/common/Badge';
 import { RadialGauge } from '../components/common/RadialGauge';
+import { SectionHeader } from '../components/common/SectionHeader';
 import { MultiHopTrajectoryExplorer } from '../components/analytics/MultiHopTrajectoryExplorer';
 import {
   CheckCircle2,
@@ -145,36 +146,33 @@ export function CareerComparisonPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-200">
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-1.5">
-          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-            Phase 9 Module 9.2: Market-Augmented Dual Career Explorer
-          </span>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium">Study Pace:</span>
+      {/* Modern Section Header */}
+      <SectionHeader
+        badge="Career Transition & Overlap Intelligence"
+        title="Career Comparison & Transition Matrix"
+        subtitle="Evaluate competency commonalities, market demand differentials, salary trajectories, study timelines, and transferable skill transition pathways between two target roles."
+        action={
+          <div className="flex items-center gap-2 bg-slate-100/80 p-1 rounded-xl">
+            <span className="text-xs text-slate-500 font-bold px-2">Study Pace:</span>
             {[5, 10, 20].map((hrs) => (
               <button
                 key={hrs}
+                type="button"
                 onClick={() => setHoursPerWeek(hrs)}
-                className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition ${
+                className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${
                   hoursPerWeek === hrs
-                    ? 'bg-primary-600 text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-white text-slate-900 shadow-subtle'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {hrs} hrs/wk
               </button>
             ))}
           </div>
-        </div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-          Career Comparison & Transition Matrix
-        </h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Evaluate competency commonalities, market demand differentials, salary trajectories, study timelines,
-          and O*NET transferable skill transition pathways between two target roles.
-        </p>
+        }
+      />
+
+      <div className="bg-white rounded-2xl p-6 shadow-card border border-slate-200/90">
 
         {/* Dual Selector Bar with Swap Action */}
         <div className="mt-6 flex flex-col md:flex-row items-center gap-3">

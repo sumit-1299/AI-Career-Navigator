@@ -13,6 +13,7 @@ import { CareerComparisonPage } from './pages/CareerComparisonPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { JobOpportunityPage } from './pages/JobOpportunityPage';
 import { PracticalTaskPage } from './pages/PracticalTaskPage';
+import { InterviewPage } from './pages/InterviewPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -27,6 +28,7 @@ export function App() {
             <Route path="careers" element={<CareersPage />} />
             <Route path="jobs" element={<JobOpportunityPage />} />
             <Route path="practical-tasks" element={<PracticalTaskPage />} />
+            <Route path="interview" element={<InterviewPage />} />
             <Route path="skill-gap" element={<SkillGapPage />} />
             <Route path="skills" element={<SkillsPage />} />
             <Route path="learning" element={<LearningPage />} />
@@ -34,6 +36,7 @@ export function App() {
             <Route path="compare" element={<CareerComparisonPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="profile" element={<ProfilePage />} />
+            <Route path="preferences" element={<ProfilePage />} />
             <Route path="login" element={<LoginPage />} />
             <Route path="register" element={<RegisterPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />

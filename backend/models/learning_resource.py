@@ -98,6 +98,7 @@ class LearningResource(db.Model):
             "description": self.description,
             "certification_available": self.certification_available,
             "status": self.status,
+            "canonical_skill_name": self.canonical_skill.canonical_name if self.canonical_skill else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

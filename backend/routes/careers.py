@@ -19,6 +19,8 @@ from models.career import Career
 from models.career_skill import CareerSkill
 from models.skill import Skill
 from services.career_recommendation_service import CareerRecommendationService
+from services.adaptive_learning_service import AdaptiveLearningService
+from services.career_readiness_service import CareerReadinessService
 from services.career_transition_service import CareerTransitionService
 from services.career_comparison_service import CareerComparisonService
 from services.student_analytics_service import StudentAnalyticsService
@@ -1184,6 +1186,23 @@ def evaluate_interview_simulation(career_id):
     }), 200
 
 
+@careers_bp.route("/interview-simulation", methods=["GET", "POST"])
+@careers_bp.route("/undefined/interview-simulation", methods=["GET", "POST"])
+@jwt_required(optional=True)
+def get_or_create_interview_simulation_alias():
+    cid = request.args.get("career_id", type=int) or (request.get_json(silent=True) or {}).get("career_id") or 1
+    return get_or_create_interview_simulation(career_id=cid)
+
+
+@careers_bp.route("/interview-simulation/evaluate", methods=["POST"])
+@careers_bp.route("/undefined/interview-simulation/evaluate", methods=["POST"])
+@jwt_required(optional=True)
+def evaluate_interview_simulation_alias():
+    data = request.get_json(silent=True) or {}
+    cid = request.args.get("career_id", type=int) or data.get("career_id") or 1
+    return evaluate_interview_simulation(career_id=cid)
+
+
 @careers_bp.route("/evaluation/benchmark", methods=["GET", "POST"])
 @jwt_required(optional=True)
 def get_recommendation_benchmark():
@@ -1266,3 +1285,115 @@ def get_career_practical_tasks(career_id):
     return jsonify(result), 200
 
 
+
+
+@careers_bp.route("/<int:career_id>/adaptive-learning", methods=["GET", "POST"])
+@jwt_required(optional=True)
+def get_adaptive_learning_plan(career_id):
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({"status": "error", "message": f"Career with id {career_id} not found"}), 404
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else None
+    data = {}
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+    if not user_id:
+        user_id = data.get("user_id") or request.args.get("user_id", type=int)
+    student_skills = data.get("student_skills")
+    limit = (data.get("limit") or data.get("max_skills") or request.args.get("limit", type=int) or request.args.get("max_skills", type=int))
+    learning_pace = data.get("learning_pace") or request.args.get("learning_pace", default=10, type=int)
+    from_career_id = data.get("from_career_id") or request.args.get("from_career_id", type=int)
+    vacancy_skills = data.get("vacancy_skills") or request.args.getlist("vacancy_skills")
+    options = {"limit": limit, "learning_pace": learning_pace, "from_career_id": from_career_id, "vacancy_skills": vacancy_skills or []}
+    result = AdaptiveLearningService.get_learning_plan(career_id=career_id, user_id=user_id, user_skills_payload=student_skills, options=options)
+    if "error" in result:
+        return jsonify({"status": "error", "message": result.get("message", "Error generating learning plan")}), 404
+    return jsonify(result), 200
+
+
+@careers_bp.route("/<int:career_id>/readiness", methods=["GET", "POST"])
+@jwt_required(optional=True)
+def get_career_readiness(career_id):
+    """
+    Phase 12.5: Career Readiness & Personalized Action Plan Engine.
+    Master orchestration layer synthesizing multi-evidence readiness,
+    today's immediate action, weekly schedule, blockers, critical path,
+    and milestone progression for a target career track.
+    """
+    career = Career.query.get(career_id)
+    if not career:
+        return jsonify({
+            "status": "error",
+            "message": f"Career with id {career_id} not found"
+        }), 404
+
+    auth_identity = get_jwt_identity()
+    user_id = int(auth_identity) if auth_identity else None
+
+    data = {}
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+
+    if not user_id:
+        user_id = data.get("user_id") or request.args.get("user_id", type=int)
+
+    student_skills = data.get("student_skills")
+
+    hours_per_week = (
+        data.get("hours_per_week")
+        or data.get("learning_pace")
+        or request.args.get("hours_per_week", type=int)
+        or request.args.get("learning_pace", type=int)
+        or 10
+    )
+    from_career_id = data.get("from_career_id") or request.args.get("from_career_id", type=int)
+    vacancy_skills = data.get("vacancy_skills") or request.args.getlist("vacancy_skills")
+
+    practical_score = data.get("practical_score")
+    if practical_score is None and request.args.get("practical_score") is not None:
+        try:
+            practical_score = float(request.args.get("practical_score"))
+        except (ValueError, TypeError):
+            practical_score = None
+
+    portfolio_score = data.get("portfolio_score")
+    if portfolio_score is None and request.args.get("portfolio_score") is not None:
+        try:
+            portfolio_score = float(request.args.get("portfolio_score"))
+        except (ValueError, TypeError):
+            portfolio_score = None
+
+    interview_score = data.get("interview_score")
+    if interview_score is None and request.args.get("interview_score") is not None:
+        try:
+            interview_score = float(request.args.get("interview_score"))
+        except (ValueError, TypeError):
+            interview_score = None
+
+    options = {
+        "hours_per_week": hours_per_week,
+        "from_career_id": from_career_id,
+        "vacancy_skills": vacancy_skills or [],
+        "practical_score": practical_score,
+        "portfolio_score": portfolio_score,
+        "interview_score": interview_score,
+        "include_actions": data.get("include_actions", request.args.get("include_actions", default=True, type=lambda v: str(v).lower() != "false")),
+        "include_blockers": data.get("include_blockers", request.args.get("include_blockers", default=True, type=lambda v: str(v).lower() != "false")),
+        "include_evidence": data.get("include_evidence", request.args.get("include_evidence", default=True, type=lambda v: str(v).lower() != "false")),
+    }
+
+    result = CareerReadinessService.get_readiness_assessment(
+        career_id=career_id,
+        user_id=user_id,
+        user_skills_payload=student_skills,
+        options=options
+    )
+
+    if "error" in result:
+        return jsonify({
+            "status": "error",
+            "message": result.get("message", "Error generating career readiness assessment")
+        }), 404
+
+    return jsonify(result), 200

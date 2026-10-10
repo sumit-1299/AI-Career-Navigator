@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Spinner, Alert } from '../components/common/UIFeedback';
 import { Badge } from '../components/common/Badge';
+import { Card, MetricCard } from '../components/common/Card';
+import { SectionHeader } from '../components/common/SectionHeader';
 import {
   FileText,
   UploadCloud,
@@ -13,6 +15,9 @@ import {
   Target,
   Award,
   XCircle,
+  ArrowLeft,
+  ChevronRight,
+  Sliders,
 } from 'lucide-react';
 
 export function ResumePage() {
@@ -135,60 +140,55 @@ export function ResumePage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-200">
-        <div className="flex items-center gap-2 mb-1.5">
-          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-            Resume Intelligence & Extraction
-          </span>
-        </div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-          Multi-Format Resume Ingestion
-        </h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Upload your resume (.PDF, .DOCX, or .TXT) to automatically extract, canonicalize, and link
-          competencies to your career profile.
-        </p>
-      </div>
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Modernized Header */}
+      <SectionHeader
+        badge="Resume Intelligence & Extraction"
+        title="Multi-Format Resume Ingestion"
+        subtitle="Upload your resume (.PDF, .DOCX, or .TXT) to automatically extract, canonicalize, and link competencies to your career profile."
+      />
 
-      {extractError && <Alert type="error" message={extractError} />}
-      {applySuccess && <Alert type="success" message={applySuccess} />}
+      {extractError && <Alert type="error" message={extractError} onClose={() => setExtractError(null)} />}
+      {applySuccess && <Alert type="success" message={applySuccess} onClose={() => setApplySuccess(null)} />}
 
       {/* Upload Box */}
       {!results && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-          <div className="flex gap-2 border-b border-slate-100 pb-3 mb-5">
+        <Card className="p-6 md:p-8 shadow-card">
+          <div className="flex bg-slate-100/80 p-1 rounded-xl w-fit mb-6">
             <button
+              type="button"
               onClick={() => setInputMode('file')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
                 inputMode === 'file'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Upload Document (.pdf, .docx, .txt)
             </button>
             <button
+              type="button"
               onClick={() => setInputMode('text')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
                 inputMode === 'text'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Paste Resume Text
             </button>
           </div>
 
-          <form onSubmit={handleExtract} className="space-y-5">
+          <form onSubmit={handleExtract} className="space-y-6">
             {inputMode === 'file' ? (
-              <div className="border-2 border-dashed border-slate-300 hover:border-primary-400 rounded-2xl p-8 text-center bg-slate-50/50 transition">
-                <UploadCloud className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-                <h3 className="text-sm font-bold text-slate-800">
-                  {selectedFile ? selectedFile.name : 'Select or drag your resume file'}
+              <div className="border-2 border-dashed border-slate-200 hover:border-primary-400 rounded-2xl p-10 text-center bg-slate-50/40 hover:bg-slate-50 transition">
+                <div className="w-16 h-16 rounded-2xl bg-primary-50 text-primary-600 flex items-center justify-center mx-auto mb-4">
+                  <UploadCloud className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {selectedFile ? selectedFile.name : 'Select or drop your resume document'}
                 </h3>
-                <p className="text-xs text-slate-400 mt-1 mb-4">
+                <p className="text-xs text-slate-500 mt-1 mb-5">
                   Supported formats: PDF (.pdf), Microsoft Word (.docx), Plain Text (.txt)
                 </p>
                 <input
@@ -200,7 +200,7 @@ export function ResumePage() {
                 />
                 <label
                   htmlFor="resume-file"
-                  className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm transition"
+                  className="cursor-pointer inline-flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-subtle hover:shadow transition"
                 >
                   <FileText className="w-4 h-4 text-primary-600" />
                   <span>{selectedFile ? 'Change File' : 'Browse Files'}</span>
@@ -212,11 +212,11 @@ export function ResumePage() {
                   Paste Resume Content
                 </label>
                 <textarea
-                  rows={8}
+                  rows={9}
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
-                  placeholder="Paste work experience, skills section, projects..."
-                  className="w-full p-4 rounded-xl border border-slate-200 text-xs focus:ring-primary-500 focus:border-primary-500 font-mono"
+                  placeholder="Paste work experience, skills inventory, projects, education..."
+                  className="w-full p-4 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 font-mono bg-slate-50/50 focus:bg-white transition"
                   required
                 />
               </div>
@@ -226,7 +226,7 @@ export function ResumePage() {
               <button
                 type="submit"
                 disabled={extracting || (inputMode === 'file' ? !selectedFile : !rawText.trim())}
-                className="px-6 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-md shadow-primary-600/20 transition flex items-center gap-2"
+                className="px-6 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-subtle hover:shadow transition flex items-center gap-2"
               >
                 {extracting ? (
                   <>
@@ -242,7 +242,7 @@ export function ResumePage() {
               </button>
             </div>
           </form>
-        </div>
+        </Card>
       )}
 
       {/* Review Screen */}
@@ -250,34 +250,32 @@ export function ResumePage() {
         <div className="space-y-6 animate-fadeIn">
           {/* Summary Metric Strip */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center">
-              <span className="text-xs text-slate-500 font-medium">Extracted Terms</span>
-              <p className="text-2xl font-black text-slate-900 mt-1">
-                {results.summary?.total_extracted ?? results.extracted_skills?.length ?? 0}
-              </p>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center">
-              <span className="text-xs text-emerald-600 font-medium">Auto-Matched Canonical</span>
-              <p className="text-2xl font-black text-emerald-600 mt-1">
-                {results.summary?.exact_matches ?? results.matched_canonical_skills?.length ?? 0}
-              </p>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center">
-              <span className="text-xs text-amber-600 font-medium">Ambiguous Candidates</span>
-              <p className="text-2xl font-black text-amber-600 mt-1">
-                {results.summary?.ambiguous_matches ?? results.ambiguous_skills?.length ?? 0}
-              </p>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center">
-              <span className="text-xs text-slate-400 font-medium">Unmatched Terms</span>
-              <p className="text-2xl font-black text-slate-600 mt-1">
-                {results.summary?.unmatched ?? results.unmatched_skills?.length ?? 0}
-              </p>
-            </div>
+            <MetricCard
+              label="Extracted Terms"
+              value={results.summary?.total_extracted ?? results.extracted_skills?.length ?? 0}
+              subtext="Raw tokens parsed"
+            />
+            <MetricCard
+              label="Auto-Matched Canonical"
+              value={results.summary?.exact_matches ?? results.matched_canonical_skills?.length ?? 0}
+              subtext="Mapped to knowledge base"
+              trend={{ positive: true, label: 'High confidence' }}
+            />
+            <MetricCard
+              label="Ambiguous Candidates"
+              value={results.summary?.ambiguous_matches ?? results.ambiguous_skills?.length ?? 0}
+              subtext="Needs user confirmation"
+              trend={{ positive: false, label: 'Requires review' }}
+            />
+            <MetricCard
+              label="Unmatched Terms"
+              value={results.summary?.unmatched ?? results.unmatched_skills?.length ?? 0}
+              subtext="Domain non-specific"
+            />
           </div>
 
           {/* Section 0: Target Career ATS Alignment & Match Score */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <Card className="p-6 md:p-7 shadow-card">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
@@ -302,7 +300,7 @@ export function ResumePage() {
                     setSelectedCareerId(cid);
                     handleScoreResume(cid);
                   }}
-                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800 bg-white"
+                  className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-800 bg-white"
                 >
                   {careers.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -314,7 +312,7 @@ export function ResumePage() {
                   type="button"
                   onClick={() => handleScoreResume(selectedCareerId)}
                   disabled={atsLoading}
-                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-subtle transition"
                 >
                   {atsLoading ? 'Scoring...' : 'Score ATS'}
                 </button>
@@ -323,7 +321,7 @@ export function ResumePage() {
 
             {atsError && (
               <div className="mt-4">
-                <Alert type="error">{atsError}</Alert>
+                <Alert type="error" message={atsError} />
               </div>
             )}
 
@@ -352,20 +350,21 @@ export function ResumePage() {
                       <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                         Alignment Level
                       </span>
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                      <Badge
+                        variant={
                           atsResult.alignment_level === 'Excellent'
-                            ? 'bg-emerald-100 text-emerald-800'
+                            ? 'success'
                             : atsResult.alignment_level === 'Strong'
-                            ? 'bg-blue-100 text-blue-800'
+                            ? 'primary'
                             : atsResult.alignment_level === 'Moderate'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}
+                            ? 'warning'
+                            : 'error'
+                        }
+                        size="md"
                       >
-                        <Award className="w-3.5 h-3.5" />
+                        <Award className="w-3.5 h-3.5 mr-1" />
                         {atsResult.alignment_level} Alignment
-                      </span>
+                      </Badge>
                     </div>
                   </div>
 
@@ -429,11 +428,11 @@ export function ResumePage() {
                 </div>
               </div>
             )}
-          </div>
+          </Card>
 
           {/* Section 1: Auto-Matched Canonical Skills */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-            <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
+          <Card className="p-6 md:p-7 shadow-card">
+            <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-600" />
               <span>
                 Canonical Matches ({results.matched_canonical_skills?.length || 0})
@@ -448,12 +447,14 @@ export function ResumePage() {
               {results.matched_canonical_skills?.map((item) => (
                 <div
                   key={item.canonical_id}
-                  className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3"
+                  className="p-4 bg-slate-50/60 hover:bg-slate-50 rounded-xl border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 transition"
                 >
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="font-bold text-sm text-slate-900">{item.canonical_name}</h4>
-                      <Badge variant="success">{Math.round((item.confidence || 1) * 100)}% Match</Badge>
+                      <Badge variant="success" size="xs">
+                        {Math.round((item.confidence || 1) * 100)}% Match
+                      </Badge>
                     </div>
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       Extracted from: "{item.source_skill}" • Match type: {item.match_type || 'exact'}
@@ -475,18 +476,18 @@ export function ResumePage() {
                           [item.canonical_id]: Number(e.target.value),
                         }))
                       }
-                      className="accent-primary-600 w-28 cursor-pointer"
+                      className="accent-primary-600 w-32 cursor-pointer h-2 bg-slate-200 rounded-lg appearance-none"
                     />
                   </div>
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
 
           {/* Section 2: Ambiguous Skills Needing Review */}
           {results.ambiguous_skills?.length > 0 && (
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-              <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
+            <Card className="p-6 md:p-7 shadow-card">
+              <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-amber-600" />
                 <span>Review Ambiguous Skills ({results.ambiguous_skills.length})</span>
               </h3>
@@ -498,11 +499,11 @@ export function ResumePage() {
                 {results.ambiguous_skills.map((amb, idx) => (
                   <div
                     key={idx}
-                    className="p-3.5 bg-amber-50/40 rounded-xl border border-amber-200 flex flex-col md:flex-row md:items-center justify-between gap-3"
+                    className="p-4 bg-amber-50/40 rounded-xl border border-amber-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3"
                   >
                     <div>
                       <p className="font-bold text-sm text-slate-900">"{amb.source_skill}"</p>
-                      <p className="text-[11px] text-amber-700">Multiple candidates identified</p>
+                      <p className="text-[11px] text-amber-700">Multiple entity candidates identified</p>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -514,7 +515,7 @@ export function ResumePage() {
                             [idx]: e.target.value,
                           }))
                         }
-                        className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs bg-white font-medium text-slate-700"
+                        className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs bg-white font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                       >
                         <option value="">-- Choose Canonical Skill --</option>
                         {amb.candidates?.map((c) => (
@@ -527,26 +528,27 @@ export function ResumePage() {
                   </div>
                 ))}
               </div>
-            </div>
+            </Card>
           )}
 
           {/* Action Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 flex items-center justify-between">
+          <Card className="p-4 shadow-card flex items-center justify-between">
             <button
               onClick={() => {
                 setResults(null);
                 setSelectedFile(null);
                 setRawText('');
               }}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+              className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl flex items-center gap-1.5 transition"
             >
-              ← Upload Another Resume
+              <ArrowLeft className="w-4 h-4" />
+              <span>Upload Another Resume</span>
             </button>
 
             <button
               onClick={handleApplyToProfile}
               disabled={applying}
-              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-600/20 transition flex items-center gap-2"
+              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-subtle hover:shadow transition flex items-center gap-2"
             >
               {applying ? (
                 <>
@@ -560,9 +562,11 @@ export function ResumePage() {
                 </>
               )}
             </button>
-          </div>
+          </Card>
         </div>
       )}
     </div>
   );
 }
+
+export default ResumePage;

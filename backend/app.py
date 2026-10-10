@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from extensions import db
 from config import Config
 from flask_jwt_extended import JWTManager
@@ -32,6 +32,15 @@ def create_app(config_class=Config):
     app.register_blueprint(career_market_bp)
     app.register_blueprint(jobs_bp)
     app.register_blueprint(practical_tasks_bp)
+
+    @app.errorhandler(405)
+    def handle_method_not_allowed(e):
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "status": "error",
+                "message": f"Method {request.method} not allowed for {request.path} (HTTP 405)"
+            }), 405
+        return e, 405
 
     @app.after_request
     def add_cors_headers(response):

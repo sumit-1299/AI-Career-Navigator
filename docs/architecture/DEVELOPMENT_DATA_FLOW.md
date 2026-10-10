@@ -1,0 +1,283 @@
+# AI Career Navigator — Development & Data Flow Architecture
+
+## 1. System Overview
+
+AI Career Navigator is an educational career intelligence and technical skill decision-support platform designed to assist university students and early-career software professionals. The platform systematically transforms raw student profiles, skills, and career preferences into actionable career pathways, skill gap diagnostics, portfolio project recommendations, academic benchmarks, industry demand signals, multi-hop transition trajectories, simulated technical interviews, and hands-on practical task evaluations.
+
+The core design philosophy is **deterministic, explainable, and multi-layered**. The application explicitly separates educational guidance from predictive employment claims:
+- **No employment guarantees or placement predictions**: Match scores evaluate deterministic skill overlap and rubric alignment.
+- **Strict provenance distinction**: Production operational entities (PostgreSQL) are strictly distinguished from research datasets (O*NET 31.0, ESCO 1.2.1) and prototype benchmark scenarios.
+- **In-memory evaluation safety**: Practical task execution and interview simulations operate completely in memory without code execution, eval(), or persistent database modifications.
+
+---
+
+## 2. Frontend Architecture
+
+The frontend is a single-page application (SPA) built on:
+- **React 18** with functional components and hooks (useState, useEffect, useContext, useMemo, useNavigate, useSearchParams).
+- **Vite 5** build tooling with Fast Refresh and PostCSS.
+- **Tailwind CSS v3** with an extended design system (custom color tokens: primary, navy, canvas, surface, accent, and elevated card shadow tokens: shadow-subtle, shadow-card, shadow-card-hover, shadow-elevated).
+- **Lucide React** for consistent iconographic language.
+- **React Router DOM v6** managing nested client routes within a unified application shell (Layout).
+
+### Shell Architecture & Routing
+- App.jsx wraps AuthProvider (Context: user, token, isAuthenticated, login, logout) and BrowserRouter.
+- Layout.jsx manages responsive sidebar navigation, brand header, user profile dropdown, and child route outlet.
+- Routes:
+  - / -> DashboardPage
+  - /careers -> CareersPage
+  - /jobs -> JobOpportunityPage
+  - /practical-tasks -> PracticalTaskPage
+  - /interview -> InterviewPage
+  - /skill-gap -> SkillGapPage
+  - /skills -> SkillsPage
+  - /learning -> LearningPage
+  - /resume -> ResumePage
+  - /compare -> CareerComparisonPage
+  - /analytics -> AnalyticsPage
+  - /profile -> ProfilePage
+  - /login -> LoginPage
+  - /register -> RegisterPage
+
+---
+
+## 3. Backend Architecture
+
+The backend is built with Python 3 and the **Flask** application framework:
+- **Application Factory** (create_app in backend/app.py): initializes SQLAlchemy extensions, Flask-JWT-Extended, registers 9 modular blueprints, sets CORS headers, and provides health probes (/api/health, /health).
+- **Configuration** (backend/config.py): environment-driven settings (database URI, JWT secret, token expiration, CORS allowed origins).
+- **Database Models** (backend/models/): 11 SQLAlchemy models reflecting relational tables.
+- **Route Blueprints** (backend/routes/): lightweight controller layer handling HTTP request parsing, JWT authentication/authorization, query/body validation, service invocation, and JSON serialization.
+- **Service Layer** (backend/services/): 24 pure business logic services encapsulating algorithms, catalog queries, multi-criteria evaluations, and cross-module compositions.
+- **Utility Layer** (backend/utils/): centralized deterministic string normalization (normalization.py).
+
+---
+
+## 4. Database Architecture
+
+The PostgreSQL database (career_navigator) contains exactly 11 relational tables:
+1. users: User accounts, authentication credentials (email, password_hash, name).
+2. student_profiles: Student academic baseline (education, specialization, graduation_year, cgpa).
+3. career_preferences: Student career goals (target_role, preferred_domain, experience_level).
+4. data_sources: Provenance tracking for external taxonomy databases (O*NET, ESCO, NSDC, PROTOTYPE).
+5. canonical_skills: Authoritative taxonomy of 30 standardized technical skills.
+6. skill_aliases: Alternate representations, synonyms, and source provenance links.
+7. skills: User-claimed verified skills and proficiency levels (1-10).
+8. careers: 10 canonical IT career tracks.
+9. career_skills: 50 baseline skill requirements across the 10 careers with importance weights.
+10. learning_resources: Curated learning courses, documentation, and tutorials.
+11. user_learning_progress: Per-user course completion tracking and progress percentage.
+
+---
+
+## 5. Research Data Architecture
+
+External taxonomy research data is partitioned into:
+- data/raw/onet/db_31_0_csv/: Raw O*NET 31.0 database files.
+- data/raw/esco/: Raw ESCO v1.2.1 dataset classification files.
+- data/processed/: Offline ETL pipeline products generated by preprocessing scripts in backend/scripts/:
+  - data/processed/onet/: Normalized candidate skill relationships and knowledge tables.
+  - data/processed/esco/: Occupation-to-skill mappings and taxonomy cross-references.
+  - data/processed/skill_candidates.csv and data/mappings/skill_mapping_review.csv: Human review files.
+- data/prototype/evaluation/: Benchmark evaluation dataset (career_recommendation_benchmark.json) providing controlled test profiles for Phase 12.1.
+
+Provenance Guardrail: Raw research datasets are offline reference inputs. They do not mutate live database tables unless ingested through the audited import script.
+
+---
+
+## 6. Authentication Flow
+
+1. User submits email and password on LoginPage.jsx.
+2. api.login(email, password) issues POST /api/login.
+3. routes/auth.py verifies password against password_hash via werkzeug.security.check_password_hash.
+4. Generates JWT access token via create_access_token(identity=user.id).
+5. Returns JSON { access_token, user: { id, email, name } }.
+6. Frontend AuthContext saves token to localStorage and sets isAuthenticated=true.
+7. Subsequent API requests attach Authorization: Bearer <token> header.
+
+---
+
+## 7. Career Recommendation Flow
+
+1. Student Profile & Verified Skills queried via GET /api/careers/recommendations.
+2. CareerRecommendationService.recommend_careers() loads the 10 careers and requirements.
+3. Multi-criteria weighted ranking:
+   - Skill Match Score: 50%
+   - Domain Preference Score: 20%
+   - Academic CGPA Alignment: 15%
+   - Experience Level Alignment: 15%
+4. Composite score ranked descending; readiness band annotated.
+5. JSON response rendered in DashboardPage.jsx and CareersPage.jsx.
+
+---
+
+## 8. Canonical Skill Flow
+
+1. Raw skill string entered by student, extracted from resume ATS, or parsed from job vacancy.
+2. Unicode NFKC normalization + lowercase + whitespace collapsing via utils/normalization.py.
+3. Trailing taxonomic qualifier stripped: strip_parenthetical_qualifiers().
+4. Alias match lookup against skill_aliases.normalized_alias.
+5. Resolved to authoritative canonical_skills.id.
+6. Traversed deterministically across downstream modules: Skill Gap, Skill ROI, Capstone Projects, Academic Benchmarks, Industry Demand, Trajectory Transitions, Interview Competencies, and Practical Tasks.
+
+---
+
+## 9. Career Flow
+
+All 10 canonical careers share an immutable ID identity throughout all backend services, database tables, and frontend pages:
+- 1: Software Developer (pt-sd-*, Node 1)
+- 2: Web Developer (pt-wd-*, Node 2)
+- 3: Data Analyst (pt-da-*, Node 3)
+- 4: Data Scientist (pt-ds-*, Node 4)
+- 5: AI/ML Engineer (pt-ai-*, Node 5)
+- 6: Cloud Engineer (pt-ce-*, Node 6)
+- 7: DevOps Engineer (pt-de-*, Node 7)
+- 8: Cybersecurity Analyst (pt-cs-*, Node 8)
+- 9: Network Engineer (pt-ne-*, Node 9)
+- 10: Database Administrator (pt-dba-*, Node 10)
+
+---
+
+## 10. Job Data Flow (Live Jobs & Career Action Center)
+
+1. Public employer vacancy feeds aggregated and cached by LiveJobsService.
+2. Filtered vacancy listing returned via GET /api/jobs.
+3. Vacancy detail loaded in JobOpportunityExplorer.jsx.
+4. User requests Action Center via GET /api/jobs/{source}/{id}/action-center.
+5. JobActionCenterService maps vacancy title/tags to canonical career ID.
+6. Matches vacancy requirements: LiveJobsService.match_job() generates Job Match Score.
+7. Downstream intelligence queried for missing vacancy skills:
+   - SkillRoiService calculates ROI on vacancy skill gaps.
+   - PortfolioProjectService provides capstone project recommendations.
+   - IndustryDemandService adds market demand context.
+   - CareerTrajectoryService provides multi-hop transition feasibility.
+   - InterviewSimulationService provides tailored practice questions.
+8. Educational non-predictive disclaimer prominently attached.
+
+---
+
+## 11. Practical Task Data Flow (Hands-On Assessment)
+
+1. PracticalTaskService.TASK_BANK holds 30 immutable tasks (exactly 3 per career track).
+2. Filtered listing returned via GET /api/practical-tasks.
+3. Student selects task, drafts technical solution in PracticalTaskExplorer.jsx.
+4. Submission evaluated in-memory via POST /api/practical-tasks/evaluate:
+   - Concept Coverage: 40%
+   - Requirement Coverage: 25%
+   - Criteria Coverage: 20%
+   - Completeness: 10%
+   - Structure: 5%
+5. Formative Mastery Bands: STRONG_PRACTICAL_MASTERY (85-100), PRACTICE_READY (70-84), NEEDS_REINFORCEMENT (55-69), FOUNDATION_REQUIRED (0-54).
+6. Zero database mutations, no code execution, no shell execution.
+
+---
+
+## 12. Interview Simulation Flow
+
+1. Question Selection: InterviewSimulationService.generate_session() selects questions from QUESTION_BANK (64 questions across 10 careers) targeting student skill gaps.
+2. Answer Submission: Student answers questions in CareerInterviewSimulator.jsx.
+3. Deterministic Evaluation: Evaluates technical concepts via regex matching against expected criteria.
+4. Weighted Rubric Scoring: Technical (40%), Conceptual (25%), Problem Solving (20%), Communication (15%).
+5. Readiness Banding: STRONG, PRACTICE_READY, NEEDS_REINFORCEMENT, FOUNDATION_REQUIRED.
+
+---
+
+## 13. Portfolio Recommendation Flow
+
+1. Student skill gaps identified by SkillGapService.
+2. PortfolioProjectService searches curated capstone projects whose implementation exercises missing skills.
+3. Prioritized by skill gap coverage ratio, difficulty, and market demand of exercised skills.
+
+---
+
+## 14. Analytics & Evaluation Flow (Phase 12.1)
+
+1. Benchmark Execution: RecommendationEvaluationService evaluates pipeline against career_recommendation_benchmark.json (20 test profiles).
+2. Ranking Metrics: NDCG@{1,3,5}, Precision@{1,3,5}, Recall@{1,3,5}, MRR.
+3. Skill Gap Diagnostics: Precision, Recall, and F1 on expected skill gaps.
+4. Robustness: Input order and casing perturbation stability.
+5. Consistency: Correlation between skill gaps, ROI, and interview readiness.
+6. Operates 100% in-memory using EvaluationSkill mock objects without database writes.
+
+---
+
+## 15. API Architecture
+
+- Auth: /api/login, /api/register
+- Profile & Preferences: /api/profile, /api/career-preferences
+- Skills: /api/skills, /api/skills/search, /api/skills/canonical/<id>, /api/skills/extract-resume, /api/skills/extract-resume/score, /api/skills/extract-resume/apply
+- Careers: /api/careers, /api/careers/<id>, /api/careers/recommendations, /api/careers/<id>/skill-gap, /api/careers/<id>/roadmap, /api/careers/<id>/pathways, /api/careers/<id>/simulate-skill, /api/careers/<id>/skill-roi, /api/careers/<id>/counterfactual, /api/careers/<id>/portfolio-recommendations, /api/careers/<id>/academic-benchmark, /api/careers/<id>/industry-demand, /api/careers/<id>/trajectory, /api/careers/<id>/interview-simulation, /api/careers/<id>/interview-simulation/evaluate, /api/careers/<id>/practical-tasks, /api/careers/evaluation/benchmark, /api/careers/compare
+- Jobs: /api/jobs, /api/jobs/sources, /api/jobs/<source>/<id>, /api/jobs/<source>/<id>/match, /api/jobs/<source>/<id>/action-center, /api/jobs/diagnostics/sql
+- Practical Tasks: /api/practical-tasks, /api/practical-tasks/<id>, /api/practical-tasks/evaluate
+- Learning: /api/learning-resources, /api/learning-resources/progress
+
+---
+
+## 16. Service Dependency Map
+
+- Core catalog and profile queries form the base layer.
+- Analytical intelligence services compose core outputs without mutating underlying scores.
+- Orchestration services (JobActionCenterService, PracticalTaskService, RecommendationEvaluationService) integrate analytical outputs cleanly.
+- Unidirectional flow with zero circular imports.
+
+---
+
+## 17. Data Ownership
+
+- users: Owned by routes/auth.py.
+- student_profiles: Owned by routes/profile.py.
+- career_preferences: Owned by routes/career_preferences.py.
+- skills: Owned by routes/skills.py.
+- canonical_skills, skill_aliases: Read-only authoritative taxonomy.
+- careers, career_skills: Read-only career baseline.
+- learning_resources, user_learning_progress: Owned by routes/learning_resources.py.
+
+---
+
+## 18. Source-of-Truth Rules
+
+1. Careers: PostgreSQL careers table is the sole source of truth for career identity.
+2. Canonical Skills: PostgreSQL canonical_skills table is the sole authoritative taxonomy.
+3. Normalization: backend/utils/normalization.py is the single source of truth for normalization.
+4. Skill Gaps: SkillGapService is the authoritative source for gap status.
+5. No Overwriting: Derived intelligence layers compose prior layer results without altering them.
+
+---
+
+## 19. Error Handling
+
+- API Client: api.js validates response.ok, unpacks server error messages, and normalizes network errors.
+- UI Layer: Uses standardized UIFeedback components (EmptyState, InlineAlert, Spinner) for explicit loading, error, and empty states.
+- Backend: Structured JSON responses with standard HTTP status codes (200, 400, 401, 404, 500).
+
+---
+
+## 20. Security Boundaries
+
+- JWT authentication enforced via @jwt_required().
+- Secure PBKDF2 password hashing via werkzeug.security.
+- Zero remote code execution: Practical tasks and interview scoring evaluate answers via deterministic string/regex matching.
+- SSRF prevention: Whitelisted live job provider URLs.
+
+---
+
+## 21. Database Boundary
+
+- Strict Read-Only Intelligence: All analytical endpoints perform zero database writes.
+- Write operations strictly confined to user registration, profile updates, preference updates, skill adds, and learning progress updates.
+
+---
+
+## 22. Research Provenance
+
+- O*NET 31.0 and ESCO 1.2.1 datasets are offline reference inputs.
+- Academic curricula and market demand benchmarks are clearly annotated as prototype research calibrations.
+- Evaluation benchmark dataset is a controlled validation tool, not real student surveillance.
+
+---
+
+## 23. Known Limitations
+
+1. Static Catalog Fallback: LiveJobsService falls back to internal mock fixtures when external feeds are unavailable.
+2. Text-Based Practical Evaluation: Evaluates conceptual and architectural completeness from written answers rather than executing code binaries.
+3. Curriculum Variations: Academic alignment provides directional orientation rather than formal university accreditation.

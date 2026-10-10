@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { Spinner, Alert } from '../components/common/UIFeedback';
 import { Badge } from '../components/common/Badge';
 import { RadialGauge } from '../components/common/RadialGauge';
+import { SectionHeader } from '../components/common/SectionHeader';
 import { ProgressBar } from '../components/common/ProgressBar';
 import {
   TrendingUp,
@@ -72,77 +73,67 @@ export function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header & Sub-tab Navigation */}
-      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 no-print">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Readiness Diagnostics & Placement Analytics
-            </span>
+      {/* Modern Section Header */}
+      <SectionHeader
+        badge="Readiness Diagnostics & Placement Analytics"
+        title="Readiness Analytics & Reports"
+        subtitle={`Tracking employability, competency gaps, and learning trajectory towards ${career_name || 'Target Role'}`}
+        action={
+          <div className="flex items-center gap-2.5">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Focus:</label>
+            <select
+              value={targetCareerId}
+              onChange={(e) => setTargetCareerId(Number(e.target.value))}
+              className="bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 px-3.5 py-2 font-bold transition cursor-pointer"
+            >
+              {careers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.career_name || c.title}
+                </option>
+              ))}
+            </select>
           </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Readiness Analytics & Reports
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Tracking employability, competency gaps, and learning trajectory towards{' '}
-            <span className="font-semibold text-slate-800">{career_name || 'Target Role'}</span>
-          </p>
+        }
+      />
 
-          {/* Sub-tab navigation */}
-          <div className="flex items-center gap-2 mt-4 p-1 bg-slate-100 rounded-xl w-fit">
-            <button
-              type="button"
-              onClick={() => setActiveTab('report')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                activeTab === 'report'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4 text-primary-600" />
-              <span>Placement Readiness Report</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('velocity')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                activeTab === 'velocity'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <TrendingUp className="w-4 h-4 text-indigo-600" />
-              <span>Velocity & Learning ROI</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('benchmark')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                activeTab === 'benchmark'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Award className="w-4 h-4 text-purple-600" />
-              <span>Research Benchmark</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-medium text-slate-500">Career Focus:</label>
-          <select
-            value={targetCareerId}
-            onChange={(e) => setTargetCareerId(Number(e.target.value))}
-            className="bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-xl px-3.5 py-2.5 font-medium transition cursor-pointer"
-          >
-            {careers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.career_name || c.title}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Sub-tab navigation */}
+      <div className="flex items-center gap-2 p-1 bg-slate-100/80 rounded-xl w-fit border border-slate-200/60 no-print">
+        <button
+          type="button"
+          onClick={() => setActiveTab('report')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+            activeTab === 'report'
+              ? 'bg-white text-slate-900 shadow-subtle'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-primary-600" />
+          <span>Placement Readiness Report</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('velocity')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+            activeTab === 'velocity'
+              ? 'bg-white text-slate-900 shadow-subtle'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4 text-indigo-600" />
+          <span>Velocity & Learning ROI</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('benchmark')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+            activeTab === 'benchmark'
+              ? 'bg-white text-slate-900 shadow-subtle'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Award className="w-4 h-4 text-purple-600" />
+          <span>Research Benchmark</span>
+        </button>
       </div>
 
       {activeTab === 'benchmark' ? (

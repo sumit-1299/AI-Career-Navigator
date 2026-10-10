@@ -3,54 +3,62 @@ import React from 'react';
 export function RadialGauge({
   score = 0,
   size = 140,
-  strokeWidth = 12,
-  label = 'Readiness',
+  strokeWidth = 10,
+  label = 'Fit Score',
+  subtext = '',
+  colorClass = 'text-primary-600',
 }) {
-  const normalizedScore = Math.min(100, Math.max(0, Math.round(score)));
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (normalizedScore / 100) * circumference;
-
-  let color = '#6366f1'; // indigo
-  if (normalizedScore >= 80) color = '#10b981'; // emerald
-  else if (normalizedScore >= 60) color = '#3b82f6'; // blue
-  else if (normalizedScore >= 30) color = '#f59e0b'; // amber
-  else color = '#ef4444'; // rose
+  const clampedScore = Math.min(100, Math.max(0, Math.round(score)));
+  const offset = circumference - (clampedScore / 100) * circumference;
 
   return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="transform -rotate-90">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="#f1f5f9"
-          strokeWidth={strokeWidth}
-          fill="transparent"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          strokeLinecap="round"
-          fill="transparent"
-          className="transition-all duration-1000 ease-out"
-        />
-      </svg>
-      <div className="absolute flex flex-col items-center justify-center text-center">
-        <span className="text-2xl font-black text-slate-800 tracking-tight leading-none">
-          {normalizedScore}%
-        </span>
-        {label && (
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
-            {label}
+    <div
+      className="flex flex-col items-center justify-center relative select-none"
+      role="progressbar"
+      aria-valuenow={clampedScore}
+      aria-valuemin="0"
+      aria-valuemax="100"
+    >
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg className="w-full h-full -rotate-90 transform" viewBox={`0 0 ${size} ${size}`}>
+          {/* Background circle track */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            className="text-slate-100 stroke-current"
+            strokeWidth={strokeWidth}
+            fill="transparent"
+          />
+          {/* Progress stroke */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            className={`${colorClass} stroke-current transition-all duration-700 ease-out`}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            fill="transparent"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
+            {clampedScore}%
           </span>
-        )}
+          {label && (
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
+              {label}
+            </span>
+          )}
+        </div>
       </div>
+      {subtext && <p className="text-xs text-slate-500 mt-2 font-medium">{subtext}</p>}
     </div>
   );
 }
+
+export default RadialGauge;

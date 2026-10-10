@@ -101,7 +101,8 @@ def get_user_progress():
         "status": "success",
         "user_id": user_id,
         "count": len(progress_list),
-        "progress": progress_list
+        "progress": progress_list,
+        "progress_items": progress_list
     }), 200
 
 
@@ -252,10 +253,36 @@ def complete_learning_resource(resource_id):
         return jsonify({
             "status": "success",
             "message": "Resource marked as completed and skill proficiency updated",
-            "progress": progress
+            "progress": progress,
+            "skill_boost": progress.get("skill_advancement")
         }), 200
     except ValueError as e:
         return jsonify({
             "status": "error",
             "message": str(e)
         }), 404
+
+
+@learning_resources_bp.route("/undefined/start", methods=["GET", "POST"])
+def undefined_resource_start():
+    return jsonify({
+        "status": "error",
+        "message": "Invalid learning resource ID 'undefined'"
+    }), 400
+
+
+@learning_resources_bp.route("/undefined/progress", methods=["GET", "POST", "PUT", "PATCH"])
+def undefined_resource_progress():
+    return jsonify({
+        "status": "error",
+        "message": "Invalid learning resource ID 'undefined'"
+    }), 400
+
+
+@learning_resources_bp.route("/undefined/complete", methods=["GET", "POST"])
+def undefined_resource_complete():
+    return jsonify({
+        "status": "error",
+        "message": "Invalid learning resource ID 'undefined'"
+    }), 400
+

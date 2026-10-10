@@ -52,7 +52,15 @@ async function request(endpoint, options = {}) {
       data = await response.json();
     } else {
       const text = await response.text();
-      data = { message: text };
+      let sanitizedMessage = text;
+      if (typeof text === 'string' && (text.includes('<!doctype') || text.includes('<!DOCTYPE') || text.includes('<html'))) {
+        console.error('Non-JSON HTML response received from API:', endpoint, response.status, text);
+        const headingMatch = text.match(/<h1>(.*?)<\/h1>/i);
+        const titleMatch = text.match(/<title>(.*?)<\/title>/i);
+        const extracted = headingMatch?.[1] || titleMatch?.[1];
+        sanitizedMessage = extracted ? `${extracted.trim()} (HTTP ${response.status})` : `Request failed with HTTP ${response.status}`;
+      }
+      data = { message: sanitizedMessage, rawHtml: text };
     }
 
     if (!response.ok) {
@@ -282,6 +290,42 @@ export const api = {
 
 
 
+  // AI Interview Simulation (Module 11.6)
+  getInterviewSimulationSession: (careerId, options = {}) => {
+    const { difficulty = null, questionCount = null, userId = null } = options;
+    const params = new URLSearchParams();
+    if (difficulty) params.append("difficulty", difficulty);
+    if (questionCount) params.append("question_count", questionCount);
+    if (userId) params.append("user_id", userId);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return request(`/careers/${careerId}/interview-simulation${query}`);
+  },
+
+  evaluateInterviewSimulation: (careerId, payload = {}) => {
+    const { answers, difficulty, userId = null } = payload;
+    const body = {
+      answers,
+      difficulty,
+    };
+    if (userId) body.user_id = userId;
+    return request(`/careers/${careerId}/interview-simulation/evaluate`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  // Recommendation Evaluation & Research Benchmark (Module 12.1)
+  getRecommendationBenchmark: (options = {}) => {
+    const { caseId = null, limit = null, includeRobustness = true, includeCrossModule = true } = options;
+    const params = new URLSearchParams();
+    if (caseId) params.append("case_id", caseId);
+    if (limit) params.append("limit", limit);
+    if (includeRobustness !== undefined) params.append("include_robustness", includeRobustness);
+    if (includeCrossModule !== undefined) params.append("include_cross_module", includeCrossModule);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return request(`/careers/evaluation/benchmark${query}`);
+  },
+
   getCareerAnalytics: (careerId) => request(`/careers/${careerId}/analytics`),
 
   getCareerReadinessSummary: (careerId, options = {}) => {
@@ -319,17 +363,29 @@ export const api = {
     return request(`/learning-resources${queryString}`);
   },
 
-  startLearningResource: (resourceId) =>
-    request(`/learning-resources/${resourceId}/start`, { method: 'POST' }),
+  startLearningResource: (resourceId) => {
+    if (!resourceId || isNaN(Number(resourceId)) || Number(resourceId) <= 0) {
+      return Promise.reject(new Error('Invalid learning resource ID: positive integer required.'));
+    }
+    return request(`/learning-resources/${resourceId}/start`, { method: 'POST' });
+  },
 
-  updateLearningProgress: (resourceId, progress_percentage, notes = null) =>
-    request(`/learning-resources/${resourceId}/progress`, {
+  updateLearningProgress: (resourceId, progress_percentage, notes = null) => {
+    if (!resourceId || isNaN(Number(resourceId)) || Number(resourceId) <= 0) {
+      return Promise.reject(new Error('Invalid learning resource ID: positive integer required.'));
+    }
+    return request(`/learning-resources/${resourceId}/progress`, {
       method: 'PUT',
       body: JSON.stringify({ progress_percentage, notes }),
-    }),
+    });
+  },
 
-  completeLearningResource: (resourceId) =>
-    request(`/learning-resources/${resourceId}/complete`, { method: 'POST' }),
+  completeLearningResource: (resourceId) => {
+    if (!resourceId || isNaN(Number(resourceId)) || Number(resourceId) <= 0) {
+      return Promise.reject(new Error('Invalid learning resource ID: positive integer required.'));
+    }
+    return request(`/learning-resources/${resourceId}/complete`, { method: 'POST' });
+  },
 
   getUserLearningProgress: (status = null) => {
     const query = status ? `?status=${encodeURIComponent(status)}` : '';
